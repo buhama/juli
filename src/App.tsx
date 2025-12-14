@@ -36,6 +36,7 @@ function App() {
         onChange={handleNotesChange}
         placeholder="Start typing..."
         autoFocus
+        style={{ width: '100%' }}
       />
     </div>
   );
