@@ -1,19 +1,26 @@
 import { useState, useEffect } from "react";
 import "./App.css";
+// Import invoke to call Rust functions from the frontend
+// This is like calling an API endpoint, but it's actually calling Rust code
+import { invoke } from "@tauri-apps/api/core";
 
 function App() {
   const [notes, setNotes] = useState("");
   const [currentDate, setCurrentDate] = useState("");
 
   useEffect(() => {
-    const now = new Date();
-    const options: Intl.DateTimeFormatOptions = {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    };
-    setCurrentDate(now.toLocaleDateString('en-US', options));
+    // Instead of using JavaScript's Date API, we're calling our Rust function
+    // invoke() is async and returns a Promise, just like fetch()
+    // The string 'get_formatted_date' matches the Rust function name
+    invoke<string>('get_formatted_date')
+      .then((formattedDate) => {
+        // The Rust function returns the formatted date string
+        setCurrentDate(formattedDate);
+      })
+      .catch((error) => {
+        // Always good to handle errors when calling Rust commands
+        console.error('Failed to get formatted date:', error);
+      });
 
     const savedNotes = localStorage.getItem('notes');
     if (savedNotes) {
