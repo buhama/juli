@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{env, sync::Mutex};
 
 use rusqlite::Connection;
 use tauri::{Manager, State};
@@ -292,6 +292,11 @@ fn print_notes_table(db: State<Db>) -> Result<Vec<NoteRow>, String> {
     Ok(notes)
 }
 
+#[tauri::command]
+fn get_api_key() -> Result<String, String> {
+    env::var("CLAUDE_API_KEY")
+        .map_err(|_| "CLAUDE_API_KEY not set. Create a .env file.".to_string())
+}
 
 // ============================================================================
 // DATE FORMATTING COMMAND
@@ -342,6 +347,7 @@ fn get_formatted_date() -> String {
 // You can ignore this for desktop development
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    dotenvy::dotenv().ok();
     // Start building the Tauri application
     // Builder pattern is common in Rust (like fluent APIs in TypeScript)
     // Think of it like: new TauriApp().setup(...).plugin(...).run()
@@ -395,7 +401,16 @@ pub fn run() {
         // Register Tauri commands here so they can be called from the frontend
         // Think of this like registering routes in an Express app
         // Each command name in the brackets becomes callable via invoke('command_name')
-        .invoke_handler(tauri::generate_handler![greet, get_formatted_date, init_db, add_note, print_notes_table, get_all_notes, get_notes_for_date])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            get_formatted_date,
+            init_db,
+            add_note,
+            print_notes_table,
+            get_all_notes,
+            get_notes_for_date,
+            get_api_key,
+        ])
         // Start the application event loop
         // This blocks until the app exits
         // In TypeScript: app.listen(3000)

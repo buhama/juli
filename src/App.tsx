@@ -142,6 +142,15 @@ function App() {
     setCurrentView('history');
   }
 
+  const handleGetApiKey = async () => {
+    try {
+      const result = await invoke<string>('get_api_key');
+      console.log('API Key:', result);
+    } catch (error) {
+      console.error('Failed to get API key:', error);
+    }
+  }
+
   return (
     <div className="app-container">
       {/* Minimal top navigation */}
@@ -170,6 +179,13 @@ function App() {
           style={{ marginLeft: 'auto' }}
         >
           Print DB
+        </button>
+        <button
+          className="nav-link"
+          onClick={handleGetApiKey}
+          style={{ marginLeft: 'auto' }}
+        >
+          Get API Key
         </button>
       </nav>
 
