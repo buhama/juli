@@ -5,8 +5,9 @@ import { invoke } from "@tauri-apps/api/core";
 type View = 'today' | 'history' | 'reminders';
 
 interface DayNote {
-  date: string;
-  content: string;
+  id: string;
+  text: string;
+  for_date: string;
 }
 
 interface Reminder {
@@ -16,71 +17,6 @@ interface Reminder {
   priority: 'high' | 'medium' | 'low';
 }
 
-// Dummy data for past days
-const PAST_DAYS: DayNote[] = [
-  {
-    date: 'December 13, 2025',
-    content: `Team meeting at 10am - discussed Q1 roadmap
-- Launch new feature by end of January
-- Need to hire 2 more engineers
-- Marketing campaign starts next week
-
-Lunch with Sarah - talked about the new project proposal
-She's interested in collaborating on the ML integration
-
-Finished reading "Atomic Habits" chapter 5
-Key insight: Environment design is crucial for behavior change
-
-Workout: 5km run in 28 minutes
-Felt great, need to maintain this consistency`
-  },
-  {
-    date: 'December 12, 2025',
-    content: `Code review session - spotted several optimization opportunities
-- Refactor database queries to reduce load time
-- Implement caching layer for API responses
-
-Doctor's appointment at 3pm - annual checkup
-Everything looks good, need to focus more on sleep hygiene
-
-Dinner ideas for the week:
-- Monday: Grilled salmon with roasted vegetables
-- Tuesday: Pasta with homemade marinara
-- Wednesday: Stir-fry with tofu
-- Thursday: Chicken tikka masala`
-  },
-  {
-    date: 'December 11, 2025',
-    content: `Morning meditation - 20 minutes
-Felt more centered and focused throughout the day
-
-Project deadline discussion with team
-Extended timeline by 2 weeks to ensure quality
-Better to ship it right than ship it fast
-
-Called mom - her birthday is coming up next month
-Need to order gift by the 15th
-
-Watched documentary on renewable energy
-Solar panel efficiency has improved dramatically`
-  },
-  {
-    date: 'December 10, 2025',
-    content: `Brainstorming session for new app features
-Ideas:
-- Dark mode toggle
-- Export notes to PDF
-- Voice-to-text integration
-- Markdown support
-- Collaborative editing
-
-Finished setting up new development environment
-M3 MacBook Pro is incredibly fast
-
-Read 2 chapters of "The Design of Everyday Things"
-Great insights on user-centered design principles`
-  }
-];
 
 // Dummy AI-generated reminders
 const REMINDERS: Reminder[] = [
@@ -133,6 +69,7 @@ function App() {
   const [notes, setNotes] = useState("");
   const [currentDate, setCurrentDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [pastDays, setPastDays] = useState<DayNote[]>([]);
 
   const handlePrintTable = async () => {
     try {
@@ -191,6 +128,17 @@ function App() {
     reminder.source.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const switchToHistoryView = async () => {
+    try {
+      const result = await invoke<DayNote[]>('get_all_notes');
+      console.log('Past days:', result);
+      setPastDays(result);
+    } catch (error) {
+      console.error('Failed to get all notes:', error);
+    }
+    setCurrentView('history');
+  }
+
   return (
     <div className="app-container">
       {/* Minimal top navigation */}
@@ -203,7 +151,7 @@ function App() {
         </button>
         <button
           className={`nav-link ${currentView === 'history' ? 'active' : ''}`}
-          onClick={() => setCurrentView('history')}
+          onClick={switchToHistoryView}
         >
           History
         </button>
@@ -240,10 +188,10 @@ function App() {
         {currentView === 'history' && (
           <div className="history-view">
             <div className="history-list">
-              {PAST_DAYS.map((day, index) => (
+              {pastDays.map((day, index) => (
                 <div key={index} className="history-card">
-                  <div className="history-date">{day.date}</div>
-                  <div className="history-content">{day.content}</div>
+                  <div className="history-date">{day.for_date}</div>
+                  <div className="history-content">{day.text}</div>
                 </div>
               ))}
             </div>

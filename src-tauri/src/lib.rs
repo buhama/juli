@@ -162,6 +162,26 @@ fn add_note(db: State<Db>, text: String, for_date: String) -> Result<i64, String
 // FETCH ALL NOTES COMMAND
 // ============================================================================
 
+#[tauri::command]
+fn get_all_notes(db: State<Db>) -> Result<Vec<NoteRow>, String> {
+    let conn = db.0.lock().unwrap();
+
+    let mut stmt = conn.prepare("SELECT * FROM notes ORDER BY id").map_err(|e| e.to_string())?;
+
+    let notes = stmt.query_map([], |row| {
+        Ok(NoteRow {
+            id: row.get(0)?,
+            text: row.get(1)?,
+            for_date: row.get(2)?,
+        })
+    })
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+
+    Ok(notes)
+}
+
 // This command retrieves all notes from the database
 // It also prints them to the console for debugging (you'll see this in your terminal)
 // In TypeScript: async function getAllNotes(): Promise<NoteRow[]>
@@ -357,7 +377,7 @@ pub fn run() {
         // Register Tauri commands here so they can be called from the frontend
         // Think of this like registering routes in an Express app
         // Each command name in the brackets becomes callable via invoke('command_name')
-        .invoke_handler(tauri::generate_handler![greet, get_formatted_date, init_db, add_note, print_notes_table])
+        .invoke_handler(tauri::generate_handler![greet, get_formatted_date, init_db, add_note, print_notes_table, get_all_notes])
         // Start the application event loop
         // This blocks until the app exits
         // In TypeScript: app.listen(3000)
