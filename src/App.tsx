@@ -66,7 +66,7 @@ const REMINDERS: Reminder[] = [
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('today');
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState<DayNote | null>(null);
   const [currentDate, setCurrentDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [pastDays, setPastDays] = useState<DayNote[]>([]);
@@ -89,30 +89,33 @@ function App() {
   }, []);
 
   useEffect(() => {
-    invoke<string>('get_formatted_date')
-      .then((formattedDate) => {
-        setCurrentDate(formattedDate);
-      })
-      .catch((error) => {
-        console.error('Failed to get formatted date:', error);
-      });
+    const getDatesAndNotes = async () => {
+      try {
+        const formattedDate = await invoke<string>('get_formatted_date')
 
-    const savedNotes = localStorage.getItem('notes');
+        if (formattedDate) {
+          setCurrentDate(formattedDate);
+        } else {
+          throw new Error('Failed to get formatted date');
+        }
 
-    if (savedNotes) {
-      setNotes(savedNotes);
+        const note = await invoke<DayNote>('get_notes_for_date', { forDate: formattedDate });
+        setNotes(note);
+      } catch (error) {
+        console.error('Failed to get dates and notes:', error);
+      }
     }
+
+    void getDatesAndNotes();
   }, []);
 
   const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (!currentDate) return;
 
     const value = e.target.value;
-    setNotes(value);
+    setNotes({ id: '', text: value, for_date: currentDate });
 
     setTimeout(() => {
-      localStorage.setItem('notes', value);
-
       invoke<number>('add_note', { text: value, forDate: currentDate })
         .catch((error) => {
           console.error('Failed to add note:', error);
@@ -177,7 +180,7 @@ function App() {
             <div className="date">{currentDate}</div>
             <textarea
               className="notes-area"
-              value={notes}
+              value={notes?.text || ''}
               onChange={handleNotesChange}
               placeholder="Start typing..."
               autoFocus
