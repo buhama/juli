@@ -218,7 +218,7 @@ function App() {
           onClick={handlePrintTable}
           style={{ marginLeft: 'auto' }}
         >
-          🖨️ Print DB
+          Print DB
         </button>
       </nav>
 
