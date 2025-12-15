@@ -134,6 +134,23 @@ function App() {
   const [currentDate, setCurrentDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const handlePrintTable = async () => {
+    try {
+      const result = await invoke('print_notes_table');
+      console.log('Notes from DB:', result);
+      alert('Table printed to terminal! Check the console.');
+    } catch (error) {
+      console.error('Failed to print table:', error);
+    }
+  };
+
+  useEffect(() => {
+    invoke<void>('init_db')
+      .catch((error) => {
+        console.error('Failed to initialize database:', error);
+      });
+  }, []);
+
   useEffect(() => {
     invoke<string>('get_formatted_date')
       .then((formattedDate) => {
@@ -144,15 +161,29 @@ function App() {
       });
 
     const savedNotes = localStorage.getItem('notes');
+
     if (savedNotes) {
       setNotes(savedNotes);
     }
   }, []);
 
   const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (!currentDate) return;
+
     const value = e.target.value;
     setNotes(value);
-    localStorage.setItem('notes', value);
+
+    setTimeout(() => {
+      localStorage.setItem('notes', value);
+
+      invoke<number>('add_note', { text: value, forDate: currentDate })
+        .catch((error) => {
+          console.error('Failed to add note:', error);
+        })
+        .then((result) => {
+          console.log('Note added:', result);
+        });
+    }, 500);
   };
 
   const filteredReminders = REMINDERS.filter(reminder =>
@@ -181,6 +212,13 @@ function App() {
           onClick={() => setCurrentView('reminders')}
         >
           Reminders
+        </button>
+        <button
+          className="nav-link"
+          onClick={handlePrintTable}
+          style={{ marginLeft: 'auto' }}
+        >
+          🖨️ Print DB
         </button>
       </nav>
 
