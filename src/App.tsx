@@ -132,6 +132,7 @@ function App() {
   const [currentView, setCurrentView] = useState<View>('today');
   const [notes, setNotes] = useState("");
   const [currentDate, setCurrentDate] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     invoke<string>('get_formatted_date')
@@ -153,6 +154,11 @@ function App() {
     setNotes(value);
     localStorage.setItem('notes', value);
   };
+
+  const filteredReminders = REMINDERS.filter(reminder =>
+    reminder.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    reminder.source.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="app-container">
@@ -208,18 +214,31 @@ function App() {
 
         {currentView === 'reminders' && (
           <div className="reminders-view">
+            <div className="search-container">
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search reminders..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
             <div className="reminders-list">
-              {REMINDERS.map((reminder) => (
-                <div key={reminder.id} className={`reminder-card priority-${reminder.priority}`}>
-                  <div className="reminder-header">
-                    <span className={`priority-badge priority-${reminder.priority}`}>
-                      {reminder.priority}
-                    </span>
-                    <span className="reminder-source">{reminder.source}</span>
+              {filteredReminders.length > 0 ? (
+                filteredReminders.map((reminder) => (
+                  <div key={reminder.id} className={`reminder-card priority-${reminder.priority}`}>
+                    <div className="reminder-header">
+                      <span className={`priority-badge priority-${reminder.priority}`}>
+                        {reminder.priority}
+                      </span>
+                      <span className="reminder-source">{reminder.source}</span>
+                    </div>
+                    <div className="reminder-text">{reminder.text}</div>
                   </div>
-                  <div className="reminder-text">{reminder.text}</div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <div className="no-results">No reminders found</div>
+              )}
             </div>
           </div>
         )}
