@@ -298,6 +298,50 @@ fn get_api_key() -> Result<String, String> {
         .map_err(|_| "CLAUDE_API_KEY not set. Create a .env file.".to_string())
 }
 
+#[tauri::command]
+async fn test_claude_api() -> Result<String, String> {
+    let api_key = get_api_key()?;
+
+    let prompt = "What is the capital of France?";
+
+    let client = reqwest::Client::new();
+
+    let body = serde_json::json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 1024,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
+    });
+
+    let response: reqwest::Response = client
+    .post("https://api.anthropic.com/v1/messages")
+    .header("x-api-key", &api_key)
+    .header("anthropic-version", "2023-06-01")
+    .header("content-type", "application/json")
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| format!("API request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", error_text));
+    }
+
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    // Extract the text content from Claude's response
+    let content = response_json["content"][0]["text"]
+        .as_str()
+        .ok_or("Nos text in response")?;
+
+    Ok(content.to_string())
+}
+
 // ============================================================================
 // DATE FORMATTING COMMAND
 // ============================================================================
@@ -410,6 +454,7 @@ pub fn run() {
             get_all_notes,
             get_notes_for_date,
             get_api_key,
+            test_claude_api,
         ])
         // Start the application event loop
         // This blocks until the app exits

@@ -144,8 +144,8 @@ function App() {
 
   const handleGetApiKey = async () => {
     try {
-      const result = await invoke<string>('get_api_key');
-      console.log('API Key:', result);
+      const result = await invoke<string>('test_claude_api');
+      console.log('Claude API Response:', result);
     } catch (error) {
       console.error('Failed to get API key:', error);
     }
