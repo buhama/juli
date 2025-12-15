@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "./App.css";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -70,6 +70,16 @@ function App() {
   const [currentDate, setCurrentDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [pastDays, setPastDays] = useState<DayNote[]>([]);
+  const debounceTimerRef = useRef<number | null>(null);
+
+  const saveNote = async (text: string, forDate: string) => {
+    try {
+      const result = await invoke<number>('add_note', { text, forDate });
+      console.log('Note saved:', result);
+    } catch (error) {
+      console.error('Failed to save note:', error);
+    }
+  };
 
   const handlePrintTable = async () => {
     try {
@@ -115,15 +125,29 @@ function App() {
     const value = e.target.value;
     setNotes({ id: '', text: value, for_date: currentDate });
 
-    setTimeout(() => {
-      invoke<number>('add_note', { text: value, forDate: currentDate })
-        .catch((error) => {
-          console.error('Failed to add note:', error);
-        })
-        .then((result) => {
-          console.log('Note added:', result);
-        });
-    }, 500);
+    // Clear existing timer
+    if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Set new timer for 30 seconds
+    debounceTimerRef.current = window.setTimeout(() => {
+      saveNote(value, currentDate);
+    }, 30000);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !currentDate) return;
+
+    if (e.key === 'Enter') {
+      // Clear the debounce timer
+      if (debounceTimerRef.current !== null) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      // Save immediately
+      saveNote(notes?.text || '', currentDate);
+    }
   };
 
   const filteredReminders = REMINDERS.filter(reminder =>
@@ -131,16 +155,33 @@ function App() {
     reminder.source.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const switchToHistoryView = async () => {
-    try {
-      const result = await invoke<DayNote[]>('get_all_notes');
-      console.log('Past days:', result);
-      setPastDays(result);
-    } catch (error) {
-      console.error('Failed to get all notes:', error);
+  const switchView = (view: View) => {
+    // Save current notes before switching views (non-blocking)
+    if (currentView === 'today' && notes?.text && currentDate) {
+      // Clear the debounce timer
+      if (debounceTimerRef.current !== null) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      // Fire and forget - don't wait for save to complete
+      void saveNote(notes.text, currentDate);
     }
-    setCurrentView('history');
-  }
+
+    // Switch view immediately
+    setCurrentView(view);
+
+    // Load data for specific views (non-blocking)
+    if (view === 'history') {
+      invoke<DayNote[]>('get_all_notes')
+        .then((result) => {
+          console.log('Past days:', result);
+          setPastDays(result);
+        })
+        .catch((error) => {
+          console.error('Failed to get all notes:', error);
+        });
+    }
+  };
 
   const handleGetApiKey = async () => {
     try {
@@ -157,19 +198,19 @@ function App() {
       <nav className="top-nav">
         <button
           className={`nav-link ${currentView === 'today' ? 'active' : ''}`}
-          onClick={() => setCurrentView('today')}
+          onClick={() => switchView('today')}
         >
           Today
         </button>
         <button
           className={`nav-link ${currentView === 'history' ? 'active' : ''}`}
-          onClick={switchToHistoryView}
+          onClick={() => switchView('history')}
         >
           History
         </button>
         <button
           className={`nav-link ${currentView === 'reminders' ? 'active' : ''}`}
-          onClick={() => setCurrentView('reminders')}
+          onClick={() => switchView('reminders')}
         >
           Reminders
         </button>
@@ -198,6 +239,7 @@ function App() {
               className="notes-area"
               value={notes?.text || ''}
               onChange={handleNotesChange}
+              onKeyDown={handleKeyDown}
               placeholder="Start typing..."
               autoFocus
             />
