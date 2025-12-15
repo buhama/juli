@@ -216,6 +216,37 @@ function App() {
     }
   };
 
+  const handleReload = async () => {
+    try {
+      // Re-initialize database
+      await invoke<void>('init_db');
+
+      // Reload date and today's notes
+      const formattedDate = await invoke<string>('get_formatted_date');
+      setCurrentDate(formattedDate);
+
+      const note = await invoke<DayNote>('get_notes_for_date', { forDate: formattedDate });
+      setNotes(note);
+
+      // Reload reminders (always needed for today view)
+      const remindersData = await invoke<Reminder[]>('get_all_reminders');
+      setReminders(remindersData);
+
+      // Reload current view's data
+      if (currentView === 'history') {
+        const historyData = await invoke<DayNote[]>('get_all_notes');
+        setPastDays(historyData);
+      } else if (currentView === 'ai-logs') {
+        const logsData = await invoke<AiLog[]>('get_all_ai_logs');
+        setAiLogs(logsData);
+      }
+
+      console.log('Reloaded all data');
+    } catch (error) {
+      console.error('Failed to reload:', error);
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Minimal top navigation */}
@@ -257,6 +288,12 @@ function App() {
           style={{ marginLeft: 'auto' }}
         >
           Get API Key
+        </button>
+        <button
+          className="nav-link"
+          onClick={handleReload}
+        >
+          Reload
         </button>
       </nav>
 
