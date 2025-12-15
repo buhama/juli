@@ -77,6 +77,10 @@ function App() {
 
         const note = await invoke<DayNote>('get_notes_for_date', { forDate: formattedDate });
         setNotes(note);
+
+        // Load reminders on initial load
+        const remindersData = await invoke<Reminder[]>('get_all_reminders');
+        setReminders(remindersData);
       } catch (error) {
         console.error('Failed to get dates and notes:', error);
       }
@@ -261,6 +265,31 @@ function App() {
         {currentView === 'today' && (
           <div className="today-view">
             <div className="date">{currentDate}</div>
+
+            {/* Minimalistic unresolved reminders */}
+            {reminders.filter(r => !r.resolved).length > 0 && (
+              <div className="unresolved-reminders">
+                <div className="unresolved-reminders-title">Reminders</div>
+                {reminders.filter(r => !r.resolved).map((reminder) => (
+                  <div key={reminder.id} className="unresolved-reminder-item">
+                    <span className="unresolved-reminder-text">{reminder.text}</span>
+                    <button
+                      className="mini-action-btn"
+                      onClick={() => handleResolveReminder(reminder.id)}
+                    >
+                      resolve
+                    </button>
+                    <button
+                      className="mini-action-btn delete"
+                      onClick={() => handleDeleteReminder(reminder.id)}
+                    >
+                      delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <textarea
               className="notes-area"
               value={notes?.text || ''}

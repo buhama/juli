@@ -96,6 +96,56 @@ body {
   color: white;
 }
 
+/* Unresolved Reminders (Minimalistic) */
+.unresolved-reminders {
+  padding: 0 40px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.unresolved-reminders-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.unresolved-reminder-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.unresolved-reminder-text {
+  font-size: 13px;
+  font-style: italic;
+  color: #b0b0b0;
+}
+
+.mini-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+
+.mini-action-btn:hover {
+  color: var(--text-primary);
+}
+
+.mini-action-btn.delete:hover {
+  color: #ff4444;
+}
+
 .notes-area {
   flex: 1;
   background-color: transparent;
