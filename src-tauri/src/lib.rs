@@ -2,7 +2,7 @@ use std::{env, sync::Mutex};
 
 use rusqlite::Connection;
 use tauri::{Manager, State};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -46,7 +46,29 @@ struct Db(Mutex<Connection>);
 struct NoteRow {
     id: i64,         // i64 is a 64-bit integer (TypeScript's number type)
     text: String,    // String is Rust's owned string type (like TypeScript's string)
-    for_date: String, // We store dates as strings for simplicity
+    for_date: String, // Wes store dates as strings for simplicity
+}
+
+#[derive(Debug, Serialize)]
+struct ReminderRow {
+    id: i64,
+    text: String,
+    resolved: bool,
+    created_from_note_id: i64,
+}
+
+// What the AI returns when analyzing a note
+// We use this to parse the AI's JSON response
+#[derive(Debug, Deserialize)]
+struct AiExtractedReminder {
+    text: String,                    // The reminder text
+    // due_date: Option<String>,        // "2025-12-20" or null
+    // notify_before_hours: Option<i64>, // How many hours before due date to notify
+}
+
+#[derive(Debug, Deserialize)]
+struct AiAnalysisResponse {
+    reminders: Vec<AiExtractedReminder>,
 }
 
 // ============================================================================
@@ -91,6 +113,13 @@ fn init_db(db: State<Db>) -> Result<(), String> {
           text TEXT NOT NULL,
           for_date TEXT NOT NULL UNIQUE
         );
+
+        CREATE TABLE IF NOT EXISTS reminders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          created_from_note_id INTEGER NOT NULL,
+          text TEXT NOT NULL,
+          resolved BOOLEAN NOT NULL DEFAULT FALSE
+        );
         "#,
     )
     // map_err converts the rusqlite::Error to a String
@@ -115,7 +144,7 @@ fn init_db(db: State<Db>) -> Result<(), String> {
 // This command inserts a new note or updates an existing one for a given date
 // In TypeScript: async function addNote(text: string, for_date: string): Promise<number>
 #[tauri::command]
-fn add_note(db: State<Db>, text: String, for_date: String) -> Result<i64, String> {
+async fn add_note(db: State<'_, Db>, text: String, for_date: String) -> Result<i64, String> {
     // Parameters:
     // - db: State<Db> - our shared database connection (injected by Tauri)
     // - text: String - the note content (owned String, not a reference)
@@ -126,36 +155,43 @@ fn add_note(db: State<Db>, text: String, for_date: String) -> Result<i64, String
     // - Error: Err(String) - error message if something goes wrong
     // i64 is a 64-bit signed integer (TypeScript's number)
 
+    // Clone text before using it, since we'll need it again after the lock is released
+    let note_text = text.clone();
+
     // Lock the database connection for thread-safe access
     // Same pattern as init_db - acquire exclusive access to the database
-    let conn = db.0.lock().unwrap();
+    let note_id = {
+        let conn = db.0.lock().unwrap();
 
-    // Execute a single SQL statement with parameters
-    // This uses "UPSERT" logic (INSERT or UPDATE if exists)
-    //
-    // Parameterized queries (?1, ?2):
-    // - ?1 refers to the first parameter (text)
-    // - ?2 refers to the second parameter (for_date)
-    // - This prevents SQL injection, just like prepared statements in TypeScript
-    // - In TypeScript: db.query('INSERT INTO notes VALUES ($1, $2)', [text, for_date])
-    //
-    // ON CONFLICT(for_date) DO UPDATE:
-    // - If a note for this date already exists, update it instead of failing
-    // - excluded.text refers to the value we tried to insert
-    // - Like: if (exists) { update() } else { insert() }
-    conn.execute(
-        "INSERT INTO notes (text, for_date) VALUES (?1, ?2)
-         ON CONFLICT(for_date) DO UPDATE SET text = excluded.text",
-        (text, for_date), // Tuple of parameters that match ?1 and ?2
-    )
-    // If execute() returns an error, convert it to String
-    .map_err(|e| e.to_string())
-    // If execute() succeeds, it returns the number of affected rows
-    // We ignore that (_) and instead get the ID of the last inserted row
-    // In TypeScript: .then(() => db.getLastInsertId())
-    .map(|_| conn.last_insert_rowid())
-    // The whole chain returns Result<i64, String>
-    // No need for Ok() wrapper because map() already wraps it
+        // Execute a single SQL statement with parameters
+        // This uses "UPSERT" logic (INSERT or UPDATE if exists)
+        //
+        // Parameterized queries (?1, ?2):
+        // - ?1 refers to the first parameter (text)
+        // - ?2 refers to the second parameter (for_date)
+        // - This prevents SQL injection, just like prepared statements in TypeScript
+        // - In TypeScript: db.query('INSERT INTO notes VALUES ($1, $2)', [text, for_date])
+        //
+        // ON CONFLICT(for_date) DO UPDATE:
+        // - If a note for this date already exists, update it instead of failing
+        // - excluded.text refers to the value we tried to insert
+        // - Like: if (exists) { update() } else { insert() }
+        conn.execute(
+            "INSERT INTO notes (text, for_date) VALUES (?1, ?2)
+             ON CONFLICT(for_date) DO UPDATE SET text = excluded.text",
+            (text, for_date), // Tuple of parameters that match ?1 and ?2
+        )
+        // If execute() returns an error, convert it to String
+        .map_err(|e| e.to_string())?;
+        // If execute() succeeds, get the ID of the last inserted row
+        // In TypeScript: .then(() => db.getLastInsertId())
+        // The lock is automatically released when conn goes out of scope
+        conn.last_insert_rowid()
+    };
+
+    create_reminder_from_note(db, note_id, note_text).await?;
+
+    Ok(note_id)
 }
 
 // ============================================================================
@@ -204,7 +240,7 @@ fn get_notes_for_date(db: State<Db>, for_date: String) -> Result<NoteRow, String
 // It also prints them to the console for debugging (you'll see this in your terminal)
 // In TypeScript: async function getAllNotes(): Promise<NoteRow[]>
 #[tauri::command]
-fn print_notes_table(db: State<Db>) -> Result<Vec<NoteRow>, String> {
+fn print_all_tables(db: State<Db>) -> Result<Vec<NoteRow>, String> {
     // Return type Result<Vec<NoteRow>, String>:
     // - Success: Ok(Vec<NoteRow>) - returns a vector (array) of NoteRow structs
     // - Error: Err(String) - error message
@@ -238,6 +274,17 @@ fn print_notes_table(db: State<Db>) -> Result<Vec<NoteRow>, String> {
     match pretty_sqlite::print_select(&*conn, "SELECT * FROM notes ORDER BY id", []) {
         Ok(_) => {},  // Success - the underscore means we ignore the return value
         Err(e) => println!("Error formatting table: {}", e), // Print error if it fails
+    }
+
+    println!("{}", "=".repeat(80));
+
+    // Print reminders table
+    println!("\n🔔 Reminders Table:");
+    println!("{}", "=".repeat(80));
+
+    match pretty_sqlite::print_select(&*conn, "SELECT * FROM reminders ORDER BY id", []) {
+        Ok(_) => {},
+        Err(e) => println!("Error formatting table: {}", e),
     }
 
     println!("{}", "=".repeat(80));
@@ -299,10 +346,8 @@ fn get_api_key() -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn test_claude_api() -> Result<String, String> {
+async fn test_claude_api(prompt: String) -> Result<String, String> {
     let api_key = get_api_key()?;
-
-    let prompt = "What is the capital of France?";
 
     let client = reqwest::Client::new();
 
@@ -340,6 +385,106 @@ async fn test_claude_api() -> Result<String, String> {
         .ok_or("Nos text in response")?;
 
     Ok(content.to_string())
+}
+
+// This is the AI prompt we'll send to analyze notes
+fn build_analysis_prompt(note_text: &str, current_date: &str, reminders: &Vec<ReminderRow>) -> String {
+    let reminders_text = reminders.iter().map(|reminder| format!("{}: {}", reminder.id, reminder.text)).collect::<Vec<String>>().join("\n");
+    let reminders_prompt = if reminders_text.is_empty() {
+        "".to_string()
+    } else {
+        format!("These are the existing reminders, dont create any duplicates: \n{}", reminders_text)
+    };
+
+    format!(r#"You are analyzing a note to extract actionable reminders. Today's date is {}.
+
+Analyze this note and extract any tasks, reminders, or action items. For each one, determine:
+1. The reminder text (what needs to be done)
+2. The due date (if mentioned or implied)
+3. How many hours before the due date to notify the user
+
+Common patterns to recognize:
+- "before eow" / "by end of week" = Friday of current week
+- "before eom" / "by end of month" = last day of month  
+- "tomorrow" = next day
+- "today" / "eod" = same day
+- "next week" = 7 days from now
+- Specific dates like "Dec 20" or "12/20"
+- No deadline mentioned = null for due_date
+
+For notify_before_hours:
+- Same day tasks: 0 hours (notify immediately when due)
+- Tomorrow tasks: 12 hours (notify evening before)
+- This week tasks: 24 hours (notify day before)
+- Longer term: 48 hours (notify 2 days before)
+
+Respond ONLY with valid JSON in this exact format:
+{{
+  "reminders": [
+    {{
+      "text": "Message Jon about the project (due date: 2025-12-20) (notify before: 24 hours)"
+    }}
+  ]
+}}
+
+{}
+
+If there are no actionable items, respond with:
+{{"reminders": []}}
+
+Note to analyze:
+{}
+"#, current_date, reminders_prompt, note_text)
+}
+
+async fn get_all_reminders(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
+    println!("Getting all reminders");
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn.prepare("SELECT * FROM reminders ORDER BY id").map_err(|e| e.to_string())?;
+    let reminders = stmt.query_map([], |row| {
+        Ok(ReminderRow {
+            id: row.get(0)?,
+            created_from_note_id: row.get(1)?,
+            text: row.get(2)?,
+            resolved: row.get(3)?,
+        })
+    })
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+
+    println!("Reminders: {:?}", reminders);
+
+    Ok(reminders)
+}
+
+#[tauri::command]
+async fn create_reminder_from_note(db: State<'_, Db>, note_id: i64, note_text: String) -> Result<(), String> {
+    let current_date = get_formatted_date();
+    let reminders = get_all_reminders(&db).await?;
+    
+    let prompt = build_analysis_prompt(note_text.as_str(), &current_date, &reminders);
+
+
+    let response = test_claude_api(prompt).await?;
+
+    let analysis: AiAnalysisResponse = serde_json::from_str(&response)
+        .map_err(|e| format!("Failed to parse AI response as JSON: {}. Response was: {}", e, response))?;
+
+    let conn = db.0.lock().unwrap();
+
+    for extracted in analysis.reminders {
+        conn.execute(
+            "INSERT INTO reminders (created_from_note_id, text) VALUES (?1, ?2)",
+            (note_id, extracted.text), // Tuple of parameters that match ?1 and ?2
+        )
+        // If execute() returns an error, convert it to String
+        .map_err(|e| e.to_string())?;
+        // If execute() succeeds, we can continue
+        // The row ID is available via conn.last_insert_rowid() if needed
+    }
+
+    Ok(())    
 }
 
 // ============================================================================
@@ -450,7 +595,7 @@ pub fn run() {
             get_formatted_date,
             init_db,
             add_note,
-            print_notes_table,
+            print_all_tables,
             get_all_notes,
             get_notes_for_date,
             get_api_key,

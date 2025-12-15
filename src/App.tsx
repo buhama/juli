@@ -73,7 +73,7 @@ function App() {
 
   const handlePrintTable = async () => {
     try {
-      const result = await invoke('print_notes_table');
+      const result = await invoke('print_all_tables');
       console.log('Notes from DB:', result);
       alert('Table printed to terminal! Check the console.');
     } catch (error) {
