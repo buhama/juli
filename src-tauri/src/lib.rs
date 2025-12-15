@@ -3,6 +3,7 @@ use std::{env, sync::Mutex};
 use rusqlite::Connection;
 use tauri::{Manager, State};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex as TokioMutex;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -24,6 +25,12 @@ fn greet(name: &str) -> String {
 // - But Rust apps can run code on multiple threads, so we need protection
 // - When you call .lock(), you get exclusive access until the lock is released
 struct Db(Mutex<Connection>);
+
+// A lock to ensure only one AI analysis runs at a time
+// This prevents race conditions where the same note gets analyzed twice
+// before the first analysis has created reminders
+// Uses TokioMutex because it needs to be held across async await points
+struct AiLock(TokioMutex<()>);
 
 // ============================================================================
 // NOTE DATA STRUCTURE
@@ -57,6 +64,18 @@ struct ReminderRow {
     created_from_note_id: i64,
 }
 
+#[derive(Debug, Serialize)]
+struct AiLogRow {
+    id: i64,
+    note_id: i64,
+    prompt: String,
+    response: String,
+    success: bool,
+    reasoning: String,
+    reminders_count: i64,
+    created_at: String,
+}
+
 // What the AI returns when analyzing a note
 // We use this to parse the AI's JSON response
 #[derive(Debug, Deserialize)]
@@ -69,6 +88,7 @@ struct AiExtractedReminder {
 #[derive(Debug, Deserialize)]
 struct AiAnalysisResponse {
     reminders: Vec<AiExtractedReminder>,
+    reasoning: String,
 }
 
 // ============================================================================
@@ -120,6 +140,17 @@ fn init_db(db: State<Db>) -> Result<(), String> {
           text TEXT NOT NULL,
           resolved BOOLEAN NOT NULL DEFAULT FALSE
         );
+
+        CREATE TABLE IF NOT EXISTS ai_interaction_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          note_id INTEGER NOT NULL,
+          prompt TEXT NOT NULL,
+          response TEXT NOT NULL,
+          success BOOLEAN NOT NULL,
+          reasoning TEXT NOT NULL DEFAULT '',
+          reminders_count INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         "#,
     )
     // map_err converts the rusqlite::Error to a String
@@ -144,9 +175,10 @@ fn init_db(db: State<Db>) -> Result<(), String> {
 // This command inserts a new note or updates an existing one for a given date
 // In TypeScript: async function addNote(text: string, for_date: string): Promise<number>
 #[tauri::command]
-async fn add_note(db: State<'_, Db>, text: String, for_date: String) -> Result<i64, String> {
+async fn add_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>, text: String, for_date: String) -> Result<i64, String> {
     // Parameters:
     // - db: State<Db> - our shared database connection (injected by Tauri)
+    // - ai_lock: State<AiLock> - lock to prevent concurrent AI analyses
     // - text: String - the note content (owned String, not a reference)
     // - for_date: String - the date this note is for
     //
@@ -157,6 +189,7 @@ async fn add_note(db: State<'_, Db>, text: String, for_date: String) -> Result<i
 
     // Clone text before using it, since we'll need it again after the lock is released
     let note_text = text.clone();
+    let for_date_clone = for_date.clone();
 
     // Lock the database connection for thread-safe access
     // Same pattern as init_db - acquire exclusive access to the database
@@ -183,13 +216,19 @@ async fn add_note(db: State<'_, Db>, text: String, for_date: String) -> Result<i
         )
         // If execute() returns an error, convert it to String
         .map_err(|e| e.to_string())?;
-        // If execute() succeeds, get the ID of the last inserted row
-        // In TypeScript: .then(() => db.getLastInsertId())
-        // The lock is automatically released when conn goes out of scope
-        conn.last_insert_rowid()
+
+        // Fetch the actual note ID by querying for the note with this date
+        // This works whether we inserted or updated
+        let mut stmt = conn.prepare("SELECT id FROM notes WHERE for_date = ?1")
+            .map_err(|e| e.to_string())?;
+
+        let note_id: i64 = stmt.query_row([for_date_clone], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+
+        note_id
     };
 
-    create_reminder_from_note(db, note_id, note_text).await?;
+    create_reminder_from_note(db, ai_lock, note_id, note_text).await?;
 
     Ok(note_id)
 }
@@ -424,13 +463,14 @@ Respond ONLY with valid JSON in this exact format:
     {{
       "text": "Message Jon about the project (due date: 2025-12-20) (notify before: 24 hours)"
     }}
-  ]
+  ],
+  "reasoning": "Explain your decision here - why you extracted these reminders, or why you found no actionable items in the note."
 }}
 
 {}
 
 If there are no actionable items, respond with:
-{{"reminders": []}}
+{{"reminders": [], "reasoning": "No actionable tasks or deadlines found in this note."}}
 
 Note to analyze:
 {}
@@ -461,32 +501,76 @@ fn get_all_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
 }
 
 #[tauri::command]
-async fn create_reminder_from_note(db: State<'_, Db>, note_id: i64, note_text: String) -> Result<(), String> {
+async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>, note_id: i64, note_text: String) -> Result<(), String> {
+    // Acquire the AI lock to ensure only one analysis runs at a time
+    // This prevents race conditions from rapid successive saves
+    let _lock = ai_lock.0.lock().await;
+
     let current_date = get_formatted_date();
     let reminders = get_all_reminders_impl(&db)?;
-    
+
     let prompt = build_analysis_prompt(note_text.as_str(), &current_date, &reminders);
 
+    // Try to call the AI API and log the result
+    let api_result = test_claude_api(prompt.clone()).await;
 
-    let response = test_claude_api(prompt).await?;
+    match api_result {
+        Ok(response) => {
+            // Try to parse the AI response
+            match serde_json::from_str::<AiAnalysisResponse>(&response) {
+                Ok(analysis) => {
+                    // Success! Insert reminders
+                    let conn = db.0.lock().unwrap();
+                    let reminders_count = analysis.reminders.len() as i64;
 
-    let analysis: AiAnalysisResponse = serde_json::from_str(&response)
-        .map_err(|e| format!("Failed to parse AI response as JSON: {}. Response was: {}", e, response))?;
+                    for extracted in &analysis.reminders {
+                        conn.execute(
+                            "INSERT INTO reminders (created_from_note_id, text) VALUES (?1, ?2)",
+                            (note_id, &extracted.text),
+                        )
+                        .map_err(|e| e.to_string())?;
+                    }
 
-    let conn = db.0.lock().unwrap();
+                    // Log successful AI interaction
+                    conn.execute(
+                        "INSERT INTO ai_interaction_logs (note_id, prompt, response, success, reasoning, reminders_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        (note_id, &prompt, &response, true, &analysis.reasoning, reminders_count),
+                    )
+                    .map_err(|e| e.to_string())?;
 
-    for extracted in analysis.reminders {
-        conn.execute(
-            "INSERT INTO reminders (created_from_note_id, text) VALUES (?1, ?2)",
-            (note_id, extracted.text), // Tuple of parameters that match ?1 and ?2
-        )
-        // If execute() returns an error, convert it to String
-        .map_err(|e| e.to_string())?;
-        // If execute() succeeds, we can continue
-        // The row ID is available via conn.last_insert_rowid() if needed
+                    Ok(())
+                },
+                Err(e) => {
+                    // Failed to parse AI response
+                    let error_msg = format!("Failed to parse AI response as JSON: {}. Response was: {}", e, response);
+                    let conn = db.0.lock().unwrap();
+
+                    // Log failed AI interaction
+                    conn.execute(
+                        "INSERT INTO ai_interaction_logs (note_id, prompt, response, success, reasoning, reminders_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        (note_id, &prompt, &error_msg, false, "", 0),
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                    Err(error_msg)
+                }
+            }
+        },
+        Err(e) => {
+            // AI API call failed
+            let error_msg = format!("AI API call failed: {}", e);
+            let conn = db.0.lock().unwrap();
+
+            // Log failed AI interaction
+            conn.execute(
+                "INSERT INTO ai_interaction_logs (note_id, prompt, response, success, reasoning, reminders_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                (note_id, &prompt, &error_msg, false, "", 0),
+            )
+            .map_err(|e| e.to_string())?;
+
+            Err(error_msg)
+        }
     }
-
-    Ok(())    
 }
 
 #[tauri::command]
@@ -501,6 +585,37 @@ fn resolve_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
 fn delete_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
     let conn = db.0.lock().unwrap();
     conn.execute("DELETE FROM reminders WHERE id = ?1", (reminder_id,))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_all_ai_logs(db: State<'_, Db>) -> Result<Vec<AiLogRow>, String> {
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn.prepare("SELECT * FROM ai_interaction_logs ORDER BY id DESC").map_err(|e| e.to_string())?;
+    let logs = stmt.query_map([], |row| {
+        Ok(AiLogRow {
+            id: row.get(0)?,
+            note_id: row.get(1)?,
+            prompt: row.get(2)?,
+            response: row.get(3)?,
+            success: row.get(4)?,
+            reasoning: row.get(5)?,
+            reminders_count: row.get(6)?,
+            created_at: row.get(7)?,
+        })
+    })
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+
+    Ok(logs)
+}
+
+#[tauri::command]
+fn delete_ai_log(db: State<'_, Db>, log_id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    conn.execute("DELETE FROM ai_interaction_logs WHERE id = ?1", (log_id,))
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -599,6 +714,9 @@ pub fn run() {
             // In TypeScript: app.locals.db = db (Express) or providers: [DbService] (Angular)
             app.manage(Db(Mutex::new(conn)));
 
+            // Initialize the AI lock to prevent concurrent analyses
+            app.manage(AiLock(TokioMutex::new(())));
+
             // Return Ok(()) to indicate setup succeeded
             Ok(())
         })
@@ -621,6 +739,8 @@ pub fn run() {
             get_all_reminders,
             resolve_reminder,
             delete_reminder,
+            get_all_ai_logs,
+            delete_ai_log,
         ])
         // Start the application event loop
         // This blocks until the app exits

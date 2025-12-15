@@ -27,3 +27,4 @@ rusqlite = { version = "0.37.0", features = ["bundled"] }
 pretty-sqlite = "0.3.0"
 dotenvy = "0.15"
 reqwest = { version = "0.12.26", features = ["json"] }
+tokio = "1.48.0"

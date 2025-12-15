@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import "./App.css";
 import { invoke } from "@tauri-apps/api/core";
 
-type View = 'today' | 'history' | 'reminders';
+type View = 'today' | 'history' | 'reminders' | 'ai-logs';
 
 interface DayNote {
   id: string;
@@ -17,6 +17,17 @@ interface Reminder {
   resolved: boolean;
 }
 
+interface AiLog {
+  id: number;
+  note_id: number;
+  prompt: string;
+  response: string;
+  success: boolean;
+  reasoning: string;
+  reminders_count: number;
+  created_at: string;
+}
+
 function App() {
   const [currentView, setCurrentView] = useState<View>('today');
   const [notes, setNotes] = useState<DayNote | null>(null);
@@ -24,6 +35,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [pastDays, setPastDays] = useState<DayNote[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
   const debounceTimerRef = useRef<number | null>(null);
 
   const saveNote = async (text: string, forDate: string) => {
@@ -145,6 +157,17 @@ function App() {
           console.error('Failed to get all reminders:', error);
         });
     }
+
+    if (view === 'ai-logs') {
+      invoke<AiLog[]>('get_all_ai_logs')
+        .then((result) => {
+          console.log('AI Logs:', result);
+          setAiLogs(result);
+        })
+        .catch((error) => {
+          console.error('Failed to get AI logs:', error);
+        });
+    }
   };
 
   const handleGetApiKey = async () => {
@@ -178,6 +201,17 @@ function App() {
     }
   };
 
+  const handleDeleteAiLog = async (logId: number) => {
+    try {
+      await invoke('delete_ai_log', { logId });
+      // Refresh AI logs list
+      const updatedLogs = await invoke<AiLog[]>('get_all_ai_logs');
+      setAiLogs(updatedLogs);
+    } catch (error) {
+      console.error('Failed to delete AI log:', error);
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Minimal top navigation */}
@@ -199,6 +233,12 @@ function App() {
           onClick={() => switchView('reminders')}
         >
           Reminders
+        </button>
+        <button
+          className={`nav-link ${currentView === 'ai-logs' ? 'active' : ''}`}
+          onClick={() => switchView('ai-logs')}
+        >
+          AI Logs
         </button>
         <button
           className="nav-link"
@@ -283,6 +323,57 @@ function App() {
                 ))
               ) : (
                 <div className="no-results">No reminders found</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {currentView === 'ai-logs' && (
+          <div className="ai-logs-view">
+            <div className="ai-logs-list">
+              {aiLogs.length > 0 ? (
+                aiLogs.map((log) => (
+                  <details key={log.id} className={`ai-log-card ${log.success ? 'success' : 'error'}`}>
+                    <summary className="ai-log-summary">
+                      <div className="log-header">
+                        <div className="log-header-left">
+                          <span className={`status-badge ${log.success ? 'success' : 'error'}`}>
+                            {log.success ? '✓ Success' : '✗ Failed'}
+                          </span>
+                          <span className="log-date">{log.created_at}</span>
+                        </div>
+                        <button
+                          className="action-btn delete"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleDeleteAiLog(log.id);
+                          }}
+                        >
+                          delete
+                        </button>
+                      </div>
+                      <div className="log-info">
+                        <span className="log-note-id">Note #{log.note_id}</span>
+                        <span className="log-count">{log.reminders_count} reminder{log.reminders_count !== 1 ? 's' : ''}</span>
+                      </div>
+                      {log.reasoning && (
+                        <div className="log-reasoning">{log.reasoning}</div>
+                      )}
+                    </summary>
+                    <div className="ai-log-details">
+                      <div className="detail-section">
+                        <h4>Prompt</h4>
+                        <pre className="detail-content">{log.prompt}</pre>
+                      </div>
+                      <div className="detail-section">
+                        <h4>Response</h4>
+                        <pre className="detail-content">{log.response}</pre>
+                      </div>
+                    </div>
+                  </details>
+                ))
+              ) : (
+                <div className="no-results">No AI logs found</div>
               )}
             </div>
           </div>
