@@ -10,8 +10,24 @@
   line-height: 1.6;
   font-weight: 400;
 
-  color: white;
-  background-color: #1a1a1a;
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-tertiary: #1e1e1e;
+  --bg-hover: #2a2a2a;
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #666666;
+  --accent-primary: #6366f1;
+  --accent-hover: #4f46e5;
+  --border-color: #2a2a2a;
+  --shadow: rgba(0, 0, 0, 0.5);
+
+  --priority-high: #ef4444;
+  --priority-medium: #f59e0b;
+  --priority-low: #10b981;
+
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -31,12 +47,58 @@ body {
   height: 100%;
 }
 
-.notes-container {
+/* App Container */
+.app-container {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: #1a1a1a;
+  background-color: var(--bg-primary);
+}
+
+/* Minimal Top Navigation */
+.top-nav {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  display: flex;
+  gap: 16px;
+  z-index: 10;
+}
+
+.nav-link {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.2s ease;
+}
+
+.nav-link:hover {
+  color: var(--text-secondary);
+}
+
+.nav-link.active {
+  color: var(--text-primary);
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Today View */
+.today-view {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .date {
@@ -48,18 +110,151 @@ body {
 }
 
 .notes-area {
+  flex: 1;
   background-color: transparent;
   border: none;
   outline: none;
-  color: white;
+  color: var(--text-primary);
   font-size: 16px;
   font-family: inherit;
   resize: none;
   line-height: 1.6;
   padding: 0 40px 40px 40px;
   width: 100%;
+  overflow-y: auto;
 }
 
 .notes-area::placeholder {
-  color: #666;
+  color: var(--text-tertiary);
+}
+
+/* History View */
+.history-view {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.history-list {
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.history-card {
+  padding: 0;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 32px;
+}
+
+.history-card:last-child {
+  border-bottom: none;
+}
+
+.history-date {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.history-content {
+  color: var(--text-primary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  font-size: 16px;
+}
+
+/* Reminders View */
+.reminders-view {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.reminders-list {
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.reminder-card {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+  padding-left: 16px;
+}
+
+.reminder-card:last-child {
+  border-bottom: none;
+}
+
+.reminder-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 3px;
+  background-color: var(--priority-low);
+  border-radius: 2px;
+}
+
+.reminder-card.priority-high::before {
+  background-color: var(--priority-high);
+}
+
+.reminder-card.priority-medium::before {
+  background-color: var(--priority-medium);
+}
+
+.reminder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.priority-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.reminder-source {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.reminder-text {
+  color: var(--text-primary);
+  line-height: 1.6;
+  font-size: 15px;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
 }
