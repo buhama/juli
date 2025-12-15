@@ -437,7 +437,7 @@ Note to analyze:
 "#, current_date, reminders_prompt, note_text)
 }
 
-async fn get_all_reminders(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
+fn get_all_reminders_impl(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
     let conn = db.0.lock().unwrap();
     let mut stmt = conn.prepare("SELECT * FROM reminders ORDER BY id").map_err(|e| e.to_string())?;
     let reminders = stmt.query_map([], |row| {
@@ -456,9 +456,14 @@ async fn get_all_reminders(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, Strin
 }
 
 #[tauri::command]
+fn get_all_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
+    get_all_reminders_impl(&db)
+}
+
+#[tauri::command]
 async fn create_reminder_from_note(db: State<'_, Db>, note_id: i64, note_text: String) -> Result<(), String> {
     let current_date = get_formatted_date();
-    let reminders = get_all_reminders(&db).await?;
+    let reminders = get_all_reminders_impl(&db)?;
     
     let prompt = build_analysis_prompt(note_text.as_str(), &current_date, &reminders);
 
@@ -482,6 +487,22 @@ async fn create_reminder_from_note(db: State<'_, Db>, note_id: i64, note_text: S
     }
 
     Ok(())    
+}
+
+#[tauri::command]
+fn resolve_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    conn.execute("UPDATE reminders SET resolved = 1 WHERE id = ?1", (reminder_id,))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    conn.execute("DELETE FROM reminders WHERE id = ?1", (reminder_id,))
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // ============================================================================
@@ -597,6 +618,9 @@ pub fn run() {
             get_notes_for_date,
             get_api_key,
             test_claude_api,
+            get_all_reminders,
+            resolve_reminder,
+            delete_reminder,
         ])
         // Start the application event loop
         // This blocks until the app exits

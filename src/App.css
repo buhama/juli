@@ -207,8 +207,8 @@ body {
 .reminder-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
+  align-items: flex-start;
+  gap: 16px;
 }
 
 .priority-badge {
@@ -227,6 +227,40 @@ body {
   color: var(--text-primary);
   line-height: 1.6;
   font-size: 14px;
+  flex: 1;
+}
+
+.reminder-actions {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s;
+}
+
+.action-btn:hover {
+  color: var(--text-primary);
+}
+
+.action-btn.delete:hover {
+  color: #ff4444;
+}
+
+.reminder-card.resolved {
+  opacity: 0.5;
+}
+
+.reminder-card.resolved .reminder-text {
+  text-decoration: line-through;
 }
 
 .no-results {

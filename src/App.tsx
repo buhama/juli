@@ -12,57 +12,10 @@ interface DayNote {
 
 interface Reminder {
   id: string;
+  created_from_note_id: string;
   text: string;
-  source: string;
-  priority: 'high' | 'medium' | 'low';
+  resolved: boolean;
 }
-
-
-// Dummy AI-generated reminders
-const REMINDERS: Reminder[] = [
-  {
-    id: '1',
-    text: 'Team meeting scheduled for 10am - prepare Q1 roadmap presentation',
-    source: 'December 13, 2025',
-    priority: 'high'
-  },
-  {
-    id: '2',
-    text: "Order gift for mom's birthday by December 15th",
-    source: 'December 11, 2025',
-    priority: 'high'
-  },
-  {
-    id: '3',
-    text: 'Refactor database queries to reduce load time',
-    source: 'December 12, 2025',
-    priority: 'medium'
-  },
-  {
-    id: '4',
-    text: 'Marketing campaign starts next week - coordinate with team',
-    source: 'December 13, 2025',
-    priority: 'medium'
-  },
-  {
-    id: '5',
-    text: 'Maintain 5km running consistency for health goals',
-    source: 'December 13, 2025',
-    priority: 'low'
-  },
-  {
-    id: '6',
-    text: 'Implement caching layer for API responses',
-    source: 'December 12, 2025',
-    priority: 'medium'
-  },
-  {
-    id: '7',
-    text: 'Focus on sleep hygiene improvements',
-    source: 'December 12, 2025',
-    priority: 'low'
-  }
-];
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('today');
@@ -70,6 +23,7 @@ function App() {
   const [currentDate, setCurrentDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [pastDays, setPastDays] = useState<DayNote[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const debounceTimerRef = useRef<number | null>(null);
 
   const saveNote = async (text: string, forDate: string) => {
@@ -150,9 +104,8 @@ function App() {
     }
   };
 
-  const filteredReminders = REMINDERS.filter(reminder =>
-    reminder.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    reminder.source.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredReminders = reminders.filter(reminder =>
+    reminder.text.toLowerCase().includes(searchQuery.toLowerCase()) 
   );
 
   const switchView = (view: View) => {
@@ -181,6 +134,17 @@ function App() {
           console.error('Failed to get all notes:', error);
         });
     }
+
+    if (view === 'reminders') {
+      invoke<Reminder[]>('get_all_reminders')
+        .then((result) => {
+          console.log('Reminders:', result);
+          setReminders(result);
+        })
+        .catch((error) => {
+          console.error('Failed to get all reminders:', error);
+        });
+    }
   };
 
   const handleGetApiKey = async () => {
@@ -191,6 +155,28 @@ function App() {
       console.error('Failed to get API key:', error);
     }
   }
+
+  const handleResolveReminder = async (reminderId: string) => {
+    try {
+      await invoke('resolve_reminder', { reminderId: parseInt(reminderId) });
+      // Refresh reminders list
+      const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
+      setReminders(updatedReminders);
+    } catch (error) {
+      console.error('Failed to resolve reminder:', error);
+    }
+  };
+
+  const handleDeleteReminder = async (reminderId: string) => {
+    try {
+      await invoke('delete_reminder', { reminderId: parseInt(reminderId) });
+      // Refresh reminders list
+      const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
+      setReminders(updatedReminders);
+    } catch (error) {
+      console.error('Failed to delete reminder:', error);
+    }
+  };
 
   return (
     <div className="app-container">
@@ -273,14 +259,26 @@ function App() {
             <div className="reminders-list">
               {filteredReminders.length > 0 ? (
                 filteredReminders.map((reminder) => (
-                  <div key={reminder.id} className={`reminder-card priority-${reminder.priority}`}>
+                  <div key={reminder.id} className={`reminder-card ${reminder.resolved ? 'resolved' : ''}`}>
                     <div className="reminder-header">
-                      <span className={`priority-badge priority-${reminder.priority}`}>
-                        {reminder.priority}
-                      </span>
-                      <span className="reminder-source">{reminder.source}</span>
+                      <div className="reminder-text">{reminder.text}</div>
+                      <div className="reminder-actions">
+                        {!reminder.resolved && (
+                          <button
+                            className="action-btn"
+                            onClick={() => handleResolveReminder(reminder.id)}
+                          >
+                            resolve
+                          </button>
+                        )}
+                        <button
+                          className="action-btn delete"
+                          onClick={() => handleDeleteReminder(reminder.id)}
+                        >
+                          delete
+                        </button>
+                      </div>
                     </div>
-                    <div className="reminder-text">{reminder.text}</div>
                   </div>
                 ))
               ) : (
