@@ -438,7 +438,6 @@ Note to analyze:
 }
 
 async fn get_all_reminders(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
-    println!("Getting all reminders");
     let conn = db.0.lock().unwrap();
     let mut stmt = conn.prepare("SELECT * FROM reminders ORDER BY id").map_err(|e| e.to_string())?;
     let reminders = stmt.query_map([], |row| {
@@ -452,8 +451,6 @@ async fn get_all_reminders(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, Strin
     .map_err(|e| e.to_string())?
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| e.to_string())?;
-
-    println!("Reminders: {:?}", reminders);
 
     Ok(reminders)
 }
