@@ -696,6 +696,14 @@ fn delete_ai_log(db: State<'_, Db>, log_id: i64) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn delete_all_ai_logs(db: State<'_, Db>) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    conn.execute("DELETE FROM ai_interaction_logs", ())
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ============================================================================
 // DATE FORMATTING COMMAND
 // ============================================================================
@@ -818,6 +826,7 @@ pub fn run() {
             delete_reminder,
             get_all_ai_logs,
             delete_ai_log,
+            delete_all_ai_logs,
         ])
         // Start the application event loop
         // This blocks until the app exits

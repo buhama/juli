@@ -413,6 +413,16 @@ function App() {
     }
   };
 
+  const handleDeleteAllAiLogs = async () => {
+    try {
+      await invoke('delete_all_ai_logs');
+      // Clear the logs list
+      setAiLogs([]);
+    } catch (error) {
+      console.error('Failed to delete all AI logs:', error);
+    }
+  };
+
   const handleReload = async () => {
     try {
       // Re-initialize database
@@ -653,6 +663,15 @@ function App() {
 
         {currentView === 'ai-logs' && (
           <div className="ai-logs-view">
+            <div className="ai-logs-header">
+              <button
+                className="action-btn delete"
+                onClick={handleDeleteAllAiLogs}
+                disabled={aiLogs.length === 0}
+              >
+                Delete All
+              </button>
+            </div>
             <div className="ai-logs-list">
               {aiLogs.length > 0 ? (
                 aiLogs.map((log) => (
