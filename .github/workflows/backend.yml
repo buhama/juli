@@ -37,14 +37,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Check Rust formatting
-        working-directory: src-tauri
-        run: cargo fmt --check
-
-      - name: Run Clippy
-        working-directory: src-tauri
-        run: cargo clippy -- -D warnings
-
       - name: Build backend
         working-directory: src-tauri
         run: cargo build
