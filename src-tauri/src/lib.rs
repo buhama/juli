@@ -62,6 +62,7 @@ struct ReminderRow {
     text: String,
     resolved: bool,
     created_from_note_id: i64,
+    tags: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -83,6 +84,7 @@ struct AiExtractedReminder {
     text: String,                    // The reminder text
     action: String,
     update_id: Option<i64>,
+    tags: Option<String>,            // Comma-separated tags
     // due_date: Option<String>,        // "2025-12-20" or null
     // notify_before_hours: Option<i64>, // How many hours before due date to notify
 }
@@ -140,7 +142,8 @@ fn init_db(db: State<Db>) -> Result<(), String> {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           created_from_note_id INTEGER NOT NULL,
           text TEXT NOT NULL,
-          resolved BOOLEAN NOT NULL DEFAULT FALSE
+          resolved BOOLEAN NOT NULL DEFAULT FALSE,
+          tags TEXT
         );
 
         CREATE TABLE IF NOT EXISTS ai_interaction_logs (
@@ -443,15 +446,24 @@ Analyze this note and extract any tasks, reminders, or action items. For each on
 1. The reminder text (what needs to be done)
 2. The due date (if mentioned or implied)
 3. How many hours before the due date to notify the user
+4. Tags (if the user ends a sentence with --[comma separated list])
 
 Common patterns to recognize:
 - "before eow" / "by end of week" = Friday of current week
-- "before eom" / "by end of month" = last day of month  
+- "before eom" / "by end of month" = last day of month
 - "tomorrow" = next day
 - "today" / "eod" = same day
 - "next week" = 7 days from now
 - Specific dates like "Dec 20" or "12/20"
 - No deadline mentioned = null for due_date
+
+For tags:
+- If a sentence ends with --[tag1, tag2, tag3], extract those as tags
+- Remove the --[tags] part from the reminder text
+- Store tags as a comma-separated string like "tag1,tag2,tag3"
+- Example: "Call John about the project --[work, urgent]" should extract tags "work,urgent" and text "Call John about the project"
+- If no tags are specified, use null
+- Feel free to update the tags of an existing reminder if the user provides new tags
 
 For notify_before_hours:
 - Same day tasks: 0 hours (notify immediately when due)
@@ -463,9 +475,10 @@ Respond ONLY with valid JSON in this exact format:
 {{
   "reminders": [
     {{
-      "text": "Message Jon about the project (due date: 2025-12-20) (notify before: 24 hours)"
-      "action": "CREATE" | "UPDATE" //this if we should be updating an existing reminder or creating a new one
-      "update_id"?: 1 //only passed in if we should be updating, and which one we should be updating
+      "text": "Message Jon about the project (due date: 2025-12-20) (notify before: 24 hours)",
+      "action": "CREATE" | "UPDATE",
+      "update_id": 1,
+      "tags": "work,urgent"
     }}
   ],
   "reasoning": "Explain your decision here - why you extracted these reminders, or why you found no actionable items in the note."
@@ -490,6 +503,7 @@ fn get_all_reminders_impl(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String
             created_from_note_id: row.get(1)?,
             text: row.get(2)?,
             resolved: row.get(3)?,
+            tags: row.get(4)?,
         })
     })
     .map_err(|e| e.to_string())?
@@ -530,14 +544,14 @@ async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>
                     for extracted in &analysis.reminders {
                         if extracted.action == "CREATE" {
                             conn.execute(
-                                "INSERT INTO reminders (created_from_note_id, text) VALUES (?1, ?2)",
-                                (note_id, &extracted.text),
+                                "INSERT INTO reminders (created_from_note_id, text, tags) VALUES (?1, ?2, ?3)",
+                                (note_id, &extracted.text, &extracted.tags),
                             )
                             .map_err(|e| e.to_string())?;
                         } else if extracted.action == "UPDATE" {
                             conn.execute(
-                                "UPDATE reminders SET text = ?1 WHERE id = ?2",
-                                (&extracted.text, &extracted.update_id)
+                                "UPDATE reminders SET text = ?1, tags = ?2 WHERE id = ?3",
+                                (&extracted.text, &extracted.tags, &extracted.update_id)
                             ).map_err(|e| e.to_string())?;
 
                         }

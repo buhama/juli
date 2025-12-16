@@ -23,6 +23,7 @@ interface Reminder {
   created_from_note_id: string;
   text: string;
   resolved: boolean;
+  tags?: string;
 }
 
 interface AiLog {
@@ -543,6 +544,13 @@ function App() {
                     className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''}`}
                   >
                     <span className="unresolved-reminder-text">{reminder.text}</span>
+                    {/* {reminder.tags && (
+                      <div className="reminder-tags">
+                        {reminder.tags.split(',').map((tag, idx) => (
+                          <span key={idx} className="reminder-tag">{tag.trim()}</span>
+                        ))}
+                      </div>
+                    )} */}
                     <button
                       className="mini-action-btn"
                       onClick={() => handleResolveReminder(reminder.id)}
@@ -600,7 +608,16 @@ function App() {
                 filteredReminders.map((reminder) => (
                   <div key={reminder.id} className={`reminder-card ${reminder.resolved ? 'resolved' : ''}`}>
                     <div className="reminder-header">
-                      <div className="reminder-text">{reminder.text}</div>
+                      <div className="reminder-content">
+                        <div className="reminder-text">{reminder.text}</div>
+                        {reminder.tags && (
+                          <div className="reminder-tags">
+                            {reminder.tags.split(',').map((tag, idx) => (
+                              <span key={idx} className="reminder-tag">{tag.trim()}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <div className="reminder-actions">
                         {!reminder.resolved ? (
                           <button

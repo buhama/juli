@@ -136,6 +136,24 @@ body {
   color: #b0b0b0;
 }
 
+.reminder-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.reminder-tag {
+  font-size: 10px;
+  font-weight: 400;
+  color: #888;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+}
+
 .mini-action-btn {
   background: transparent;
   border: none;
@@ -290,6 +308,19 @@ body {
   line-height: 1.6;
   font-size: 14px;
   flex: 1;
+}
+
+.reminder-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.reminder-text-with-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .reminder-actions {
