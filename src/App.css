@@ -472,6 +472,74 @@ body {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 }
 
+/* Global Status Indicator */
+.status-indicator {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background-color: rgba(26, 26, 26, 0.95);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-in;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--text-secondary);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.status-icon {
+  color: #4caf50;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status-text {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.status-indicator.ai-success .status-text {
+  color: var(--text-primary);
+}
+
+.status-indicator.ai-no-action .status-text {
+  color: var(--text-secondary);
+}
+
 /* Scrollbar Styling */
 ::-webkit-scrollbar {
   width: 8px;

@@ -4,6 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 
 type View = 'today' | 'history' | 'reminders' | 'ai-logs';
 
+type StatusType = 'saving' | 'ai-running' | 'ai-success' | 'ai-no-action' | null;
+
+interface StatusState {
+  type: StatusType;
+  message?: string;
+  remindersCount?: number;
+}
+
 interface DayNote {
   id: string;
   text: string;
@@ -37,15 +45,53 @@ function App() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
   const [selectedReminderIndex, setSelectedReminderIndex] = useState<number | null>(null);
+  const [status, setStatus] = useState<StatusState>({ type: null });
   const debounceTimerRef = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const statusTimeoutRef = useRef<number | null>(null);
 
   const saveNote = async (text: string, forDate: string) => {
     try {
+      // Show saving and AI running status
+      setStatus({ type: 'saving' });
+
+      // Clear any existing status timeout
+      if (statusTimeoutRef.current !== null) {
+        clearTimeout(statusTimeoutRef.current);
+      }
+
+      // Store current reminders count before saving
+      const currentRemindersCount = reminders.length;
+
+      // Update status to show AI is analyzing
+      setTimeout(() => {
+        setStatus({ type: 'ai-running' });
+      }, 300);
+
+      // The add_note call runs the AI analysis internally
       const result = await invoke<number>('add_note', { text, forDate });
       console.log('Note saved:', result);
+
+      // After save completes (AI has already run), always refetch reminders
+      const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
+      setReminders(updatedReminders);
+
+      const newRemindersCount = updatedReminders.length - currentRemindersCount;
+
+      if (newRemindersCount > 0) {
+        setStatus({ type: 'ai-success', remindersCount: newRemindersCount });
+      } else {
+        setStatus({ type: 'ai-no-action' });
+      }
+
+      // Auto-hide status after 3 seconds
+      statusTimeoutRef.current = window.setTimeout(() => {
+        setStatus({ type: null });
+      }, 3000);
+
     } catch (error) {
       console.error('Failed to save note:', error);
+      setStatus({ type: null });
     }
   };
 
@@ -392,6 +438,40 @@ function App() {
 
   return (
     <div className="app-container">
+      {/* Global status indicator */}
+      {status.type && (
+        <div className={`status-indicator ${status.type}`}>
+          {status.type === 'saving' && (
+            <>
+              <span className="status-dot"></span>
+              <span className="status-text">Saving...</span>
+            </>
+          )}
+          {status.type === 'ai-running' && (
+            <>
+              <span className="status-dot"></span>
+              <span className="status-text">AI analyzing...</span>
+            </>
+          )}
+          {status.type === 'ai-success' && (
+            <>
+              <span className="status-icon">✓</span>
+              <span className="status-text">
+                {status.remindersCount === 1
+                  ? 'Added 1 reminder'
+                  : `Added ${status.remindersCount} reminders`}
+              </span>
+            </>
+          )}
+          {status.type === 'ai-no-action' && (
+            <>
+              <span className="status-icon">✓</span>
+              <span className="status-text">Saved</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Minimal top navigation */}
       <nav className="top-nav">
         <button
