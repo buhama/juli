@@ -120,6 +120,13 @@ function App() {
 
       if (!modifierKey) return;
 
+      // Check for Cmd+Shift+R (reload)
+      if (e.key.toLowerCase() === 'r' && e.shiftKey) {
+        e.preventDefault();
+        handleReload();
+        return;
+      }
+
       switch (e.key.toLowerCase()) {
         case 't':
           e.preventDefault();
