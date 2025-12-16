@@ -81,6 +81,8 @@ struct AiLogRow {
 #[derive(Debug, Deserialize)]
 struct AiExtractedReminder {
     text: String,                    // The reminder text
+    action: String,
+    update_id: Option<i64>,
     // due_date: Option<String>,        // "2025-12-20" or null
     // notify_before_hours: Option<i64>, // How many hours before due date to notify
 }
@@ -462,6 +464,8 @@ Respond ONLY with valid JSON in this exact format:
   "reminders": [
     {{
       "text": "Message Jon about the project (due date: 2025-12-20) (notify before: 24 hours)"
+      "action": "CREATE" | "UPDATE" //this if we should be updating an existing reminder or creating a new one
+      "update_id"?: 1 //only passed in if we should be updating, and which one we should be updating
     }}
   ],
   "reasoning": "Explain your decision here - why you extracted these reminders, or why you found no actionable items in the note."
@@ -524,11 +528,19 @@ async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>
                     let reminders_count = analysis.reminders.len() as i64;
 
                     for extracted in &analysis.reminders {
-                        conn.execute(
-                            "INSERT INTO reminders (created_from_note_id, text) VALUES (?1, ?2)",
-                            (note_id, &extracted.text),
-                        )
-                        .map_err(|e| e.to_string())?;
+                        if extracted.action == "CREATE" {
+                            conn.execute(
+                                "INSERT INTO reminders (created_from_note_id, text) VALUES (?1, ?2)",
+                                (note_id, &extracted.text),
+                            )
+                            .map_err(|e| e.to_string())?;
+                        } else if extracted.action == "UPDATE" {
+                            conn.execute(
+                                "UPDATE reminders SET text = ?1 WHERE id = ?2",
+                                (&extracted.text, &extracted.update_id)
+                            ).map_err(|e| e.to_string())?;
+
+                        }
                     }
 
                     // Log successful AI interaction
