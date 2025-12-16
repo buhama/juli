@@ -156,6 +156,11 @@ fn init_db(db: State<Db>) -> Result<(), String> {
           reminders_count INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS last_used_note_in_ai (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          note_text TEXT NOT NULL
+        );
         "#,
     )
     // map_err converts the rusqlite::Error to a String
@@ -534,6 +539,24 @@ async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>
     // This prevents race conditions from rapid successive saves
     let _lock = ai_lock.0.lock().await;
 
+    // Check if this note has already been processed by AI
+    // If the note text is identical to the last one processed, skip AI analysis
+    {
+        let conn = db.0.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT note_text FROM last_used_note_in_ai WHERE id = 1")
+            .map_err(|e| e.to_string())?;
+
+        let last_note_text: Result<String, _> = stmt.query_row([], |row| row.get(0));
+
+        // If we found a previous note and it matches the current one, skip AI processing
+        if let Ok(last_text) = last_note_text {
+            if last_text == note_text {
+                println!("⏭️  Skipping AI analysis - note unchanged from last AI processing");
+                return Ok(());
+            }
+        }
+    }
+
     let current_date = get_formatted_date();
     let reminders = get_all_reminders_impl(&db)?;
 
@@ -571,6 +594,15 @@ async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>
                     conn.execute(
                         "INSERT INTO ai_interaction_logs (note_id, prompt, response, success, reasoning, reminders_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         (note_id, &prompt, &response, true, &analysis.reasoning, reminders_count),
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                    // Update the last used note in AI table
+                    // This uses UPSERT logic to either insert or update the single row
+                    conn.execute(
+                        "INSERT INTO last_used_note_in_ai (id, note_text) VALUES (1, ?1)
+                         ON CONFLICT(id) DO UPDATE SET note_text = excluded.note_text",
+                        (&note_text,),
                     )
                     .map_err(|e| e.to_string())?;
 
