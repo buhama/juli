@@ -63,6 +63,7 @@ struct ReminderRow {
     resolved: bool,
     created_from_note_id: i64,
     tags: Option<String>,
+    created_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -171,6 +172,11 @@ fn init_db(db: State<Db>) -> Result<(), String> {
     // Add resolved_at column to existing reminders table (for analytics)
     // This will fail silently if the column already exists
     let _ = conn.execute("ALTER TABLE reminders ADD COLUMN resolved_at TEXT", ());
+
+    // Add created_at column to existing reminders table
+    // This will fail silently if the column already exists
+    // Nullable for backwards compatibility with existing reminders
+    let _ = conn.execute("ALTER TABLE reminders ADD COLUMN created_at TEXT", ());
     // The ? operator is shorthand for:
     // if error, return Err(error) immediately
     // if ok, unwrap and continue
@@ -515,7 +521,8 @@ Note to analyze:
 
 fn get_all_reminders_impl(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
     let conn = db.0.lock().unwrap();
-    let mut stmt = conn.prepare("SELECT * FROM reminders ORDER BY id").map_err(|e| e.to_string())?;
+    // Order by created_at, with NULLs (old reminders) at the end
+    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at FROM reminders ORDER BY created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
     let reminders = stmt.query_map([], |row| {
         Ok(ReminderRow {
             id: row.get(0)?,
@@ -523,6 +530,7 @@ fn get_all_reminders_impl(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String
             text: row.get(2)?,
             resolved: row.get(3)?,
             tags: row.get(4)?,
+            created_at: row.get(5)?,
         })
     })
     .map_err(|e| e.to_string())?
@@ -540,7 +548,8 @@ fn get_all_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
 #[tauri::command]
 fn get_unresolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
     let conn = db.0.lock().unwrap();
-    let mut stmt = conn.prepare("SELECT * FROM reminders WHERE resolved = 0 ORDER BY id").map_err(|e| e.to_string())?;
+    // Order by created_at, with NULLs (old reminders) at the end
+    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at FROM reminders WHERE resolved = 0 ORDER BY created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
     let reminders = stmt.query_map([], |row| {
         Ok(ReminderRow {
             id: row.get(0)?,
@@ -548,6 +557,7 @@ fn get_unresolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, Strin
             text: row.get(2)?,
             resolved: row.get(3)?,
             tags: row.get(4)?,
+            created_at: row.get(5)?,
         })
     })
     .map_err(|e| e.to_string())?
@@ -560,7 +570,8 @@ fn get_unresolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, Strin
 #[tauri::command]
 fn get_resolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
     let conn = db.0.lock().unwrap();
-    let mut stmt = conn.prepare("SELECT * FROM reminders WHERE resolved = 1 ORDER BY id").map_err(|e| e.to_string())?;
+    // Order by created_at, with NULLs (old reminders) at the end
+    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at FROM reminders WHERE resolved = 1 ORDER BY created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
     let reminders = stmt.query_map([], |row| {
         Ok(ReminderRow {
             id: row.get(0)?,
@@ -568,6 +579,7 @@ fn get_resolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String>
             text: row.get(2)?,
             resolved: row.get(3)?,
             tags: row.get(4)?,
+            created_at: row.get(5)?,
         })
     })
     .map_err(|e| e.to_string())?
@@ -621,7 +633,7 @@ async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>
                     for extracted in &analysis.reminders {
                         if extracted.action == "CREATE" {
                             conn.execute(
-                                "INSERT INTO reminders (created_from_note_id, text, tags) VALUES (?1, ?2, ?3)",
+                                "INSERT INTO reminders (created_from_note_id, text, tags, created_at) VALUES (?1, ?2, ?3, datetime('now'))",
                                 (note_id, &extracted.text, &extracted.tags),
                             )
                             .map_err(|e| e.to_string())?;
