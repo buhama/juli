@@ -534,6 +534,46 @@ fn get_all_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
 }
 
 #[tauri::command]
+fn get_unresolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn.prepare("SELECT * FROM reminders WHERE resolved = 0 ORDER BY id").map_err(|e| e.to_string())?;
+    let reminders = stmt.query_map([], |row| {
+        Ok(ReminderRow {
+            id: row.get(0)?,
+            created_from_note_id: row.get(1)?,
+            text: row.get(2)?,
+            resolved: row.get(3)?,
+            tags: row.get(4)?,
+        })
+    })
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+
+    Ok(reminders)
+}
+
+#[tauri::command]
+fn get_resolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn.prepare("SELECT * FROM reminders WHERE resolved = 1 ORDER BY id").map_err(|e| e.to_string())?;
+    let reminders = stmt.query_map([], |row| {
+        Ok(ReminderRow {
+            id: row.get(0)?,
+            created_from_note_id: row.get(1)?,
+            text: row.get(2)?,
+            resolved: row.get(3)?,
+            tags: row.get(4)?,
+        })
+    })
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+
+    Ok(reminders)
+}
+
+#[tauri::command]
 async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>, note_id: i64, note_text: String) -> Result<(), String> {
     // Acquire the AI lock to ensure only one analysis runs at a time
     // This prevents race conditions from rapid successive saves
@@ -821,6 +861,8 @@ pub fn run() {
             get_api_key,
             test_claude_api,
             get_all_reminders,
+            get_unresolved_reminders,
+            get_resolved_reminders,
             resolve_reminder,
             unresolve_reminder,
             delete_reminder,
