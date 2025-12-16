@@ -37,6 +37,7 @@ function App() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
   const debounceTimerRef = useRef<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const saveNote = async (text: string, forDate: string) => {
     try {
@@ -98,6 +99,16 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [currentView, notes, currentDate]);
+
+  // Position cursor at end of textarea when on today view
+  useEffect(() => {
+    if (currentView === 'today' && textareaRef.current) {
+      const textarea = textareaRef.current;
+      const length = textarea.value.length;
+      textarea.setSelectionRange(length, length);
+      textarea.focus();
+    }
+  }, [currentView, notes]);
 
   useEffect(() => {
     const getDatesAndNotes = async () => {
@@ -363,12 +374,12 @@ function App() {
             )}
 
             <textarea
+              ref={textareaRef}
               className="notes-area"
               value={notes?.text || ''}
               onChange={handleNotesChange}
               onKeyDown={handleKeyDown}
               placeholder="Start typing..."
-              autoFocus
             />
           </div>
         )}
