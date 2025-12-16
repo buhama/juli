@@ -36,6 +36,7 @@ function App() {
   const [pastDays, setPastDays] = useState<DayNote[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
+  const [selectedReminderIndex, setSelectedReminderIndex] = useState<number | null>(null);
   const debounceTimerRef = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -84,7 +85,19 @@ function App() {
           break;
         case 'r':
           e.preventDefault();
-          switchView('reminders');
+          // If on today view and reminder already selected, switch to reminders view
+          if (currentView === 'today' && selectedReminderIndex !== null) {
+            switchView('reminders');
+          } else if (currentView === 'today') {
+            // If on today view but no reminder selected, select first unresolved reminder
+            const unresolvedReminders = reminders.filter(r => !r.resolved);
+            if (unresolvedReminders.length > 0) {
+              setSelectedReminderIndex(0);
+            }
+          } else {
+            // Otherwise, switch to reminders view
+            switchView('reminders');
+          }
           break;
         case 'l':
           e.preventDefault();
@@ -98,17 +111,71 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentView, notes, currentDate]);
+  }, [currentView, notes, currentDate, reminders, selectedReminderIndex]);
+
+  // Vim-style navigation for reminders
+  useEffect(() => {
+    const handleReminderNavigation = (e: KeyboardEvent) => {
+      // Only handle if a reminder is selected
+      if (selectedReminderIndex === null || currentView !== 'today') return;
+
+      // Don't handle if modifier keys are pressed (let the main navigation handler deal with it)
+      const modifierKey = e.metaKey || e.ctrlKey;
+      if (modifierKey) return;
+
+      const unresolvedReminders = reminders.filter(r => !r.resolved);
+
+      switch (e.key.toLowerCase()) {
+        case 'j':
+          // Move down
+          e.preventDefault();
+          if (selectedReminderIndex < unresolvedReminders.length - 1) {
+            setSelectedReminderIndex(selectedReminderIndex + 1);
+          }
+          break;
+        case 'k':
+          // Move up
+          e.preventDefault();
+          if (selectedReminderIndex > 0) {
+            setSelectedReminderIndex(selectedReminderIndex - 1);
+          }
+          break;
+        case 'r':
+          // Resolve selected reminder (only if no modifier key pressed)
+          e.preventDefault();
+          if (unresolvedReminders[selectedReminderIndex]) {
+            const reminderToResolve = unresolvedReminders[selectedReminderIndex];
+            handleResolveReminder(reminderToResolve.id);
+            // The next reminder will be selected in the resolve handler
+          }
+          break;
+        case 'escape':
+          // Deselect and return to textarea
+          e.preventDefault();
+          setSelectedReminderIndex(null);
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleReminderNavigation);
+
+    return () => {
+      window.removeEventListener('keydown', handleReminderNavigation);
+    };
+  }, [selectedReminderIndex, currentView, reminders]);
 
   // Position cursor at end of textarea when on today view
   useEffect(() => {
-    if (currentView === 'today' && textareaRef.current) {
+    if (currentView === 'today' && textareaRef.current && selectedReminderIndex === null) {
       const textarea = textareaRef.current;
       const length = textarea.value.length;
       textarea.setSelectionRange(length, length);
       textarea.focus();
     }
-  }, [currentView, notes]);
+  }, [currentView, notes, selectedReminderIndex]);
 
   useEffect(() => {
     const getDatesAndNotes = async () => {
@@ -182,6 +249,9 @@ function App() {
       void saveNote(notes.text, currentDate);
     }
 
+    // Deselect any selected reminder when switching views
+    setSelectedReminderIndex(null);
+
     // Switch view immediately
     setCurrentView(view);
 
@@ -235,8 +305,35 @@ function App() {
       // Refresh reminders list
       const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
       setReminders(updatedReminders);
+
+      // If a reminder was selected, keep selection on next unresolved reminder
+      if (selectedReminderIndex !== null) {
+        const newUnresolvedReminders = updatedReminders.filter(r => !r.resolved);
+        if (newUnresolvedReminders.length > 0) {
+          // Keep same index, or select last if we were at the end
+          const newIndex = Math.min(selectedReminderIndex, newUnresolvedReminders.length - 1);
+          setSelectedReminderIndex(newIndex);
+        } else {
+          // No more unresolved reminders, deselect and focus textarea
+          setSelectedReminderIndex(null);
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+        }
+      }
     } catch (error) {
       console.error('Failed to resolve reminder:', error);
+    }
+  };
+
+  const handleUnresolveReminder = async (reminderId: string) => {
+    try {
+      await invoke('unresolve_reminder', { reminderId: parseInt(reminderId) });
+      // Refresh reminders list
+      const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
+      setReminders(updatedReminders);
+    } catch (error) {
+      console.error('Failed to unresolve reminder:', error);
     }
   };
 
@@ -353,8 +450,11 @@ function App() {
             {reminders.filter(r => !r.resolved).length > 0 && (
               <div className="unresolved-reminders">
                 <div className="unresolved-reminders-title">Reminders</div>
-                {reminders.filter(r => !r.resolved).map((reminder) => (
-                  <div key={reminder.id} className="unresolved-reminder-item">
+                {reminders.filter(r => !r.resolved).map((reminder, index) => (
+                  <div
+                    key={reminder.id}
+                    className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''}`}
+                  >
                     <span className="unresolved-reminder-text">{reminder.text}</span>
                     <button
                       className="mini-action-btn"
@@ -415,12 +515,19 @@ function App() {
                     <div className="reminder-header">
                       <div className="reminder-text">{reminder.text}</div>
                       <div className="reminder-actions">
-                        {!reminder.resolved && (
+                        {!reminder.resolved ? (
                           <button
                             className="action-btn"
                             onClick={() => handleResolveReminder(reminder.id)}
                           >
                             resolve
+                          </button>
+                        ) : (
+                          <button
+                            className="action-btn"
+                            onClick={() => handleUnresolveReminder(reminder.id)}
+                          >
+                            unresolve
                           </button>
                         )}
                         <button

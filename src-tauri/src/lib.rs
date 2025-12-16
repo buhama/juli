@@ -582,6 +582,14 @@ fn resolve_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn unresolve_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
+    let conn = db.0.lock().unwrap();
+    conn.execute("UPDATE reminders SET resolved = 0 WHERE id = ?1", (reminder_id,))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn delete_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
     let conn = db.0.lock().unwrap();
     conn.execute("DELETE FROM reminders WHERE id = ?1", (reminder_id,))
@@ -738,6 +746,7 @@ pub fn run() {
             test_claude_api,
             get_all_reminders,
             resolve_reminder,
+            unresolve_reminder,
             delete_reminder,
             get_all_ai_logs,
             delete_ai_log,
