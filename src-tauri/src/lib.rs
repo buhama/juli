@@ -428,12 +428,16 @@ async fn test_claude_api(prompt: String) -> Result<String, String> {
         .as_str()
         .ok_or("Nos text in response")?;
 
-    Ok(content.to_string())
+    let mut content_string = content.to_string();
+    content_string = content_string.replace("```json", "");
+    content_string = content_string.replace("```", "");
+
+    Ok(content_string)
 }
 
-// This is the AI prompt we'll send to analyze notes
+// This is the AI prompt we'll send to analyze notesnotes
 fn build_analysis_prompt(note_text: &str, current_date: &str, reminders: &Vec<ReminderRow>) -> String {
-    let reminders_text = reminders.iter().map(|reminder| format!("{}: {}", reminder.id, reminder.text)).collect::<Vec<String>>().join("\n");
+    let reminders_text = reminders.iter().map(|reminder| format!("{}: {} (existing tags: {})", reminder.id, reminder.text, reminder.tags.as_deref().unwrap_or(""))).collect::<Vec<String>>().join("\n");
     let reminders_prompt = if reminders_text.is_empty() {
         "".to_string()
     } else {
@@ -458,12 +462,18 @@ Common patterns to recognize:
 - No deadline mentioned = null for due_date
 
 For tags:
-- If a sentence ends with --[tag1, tag2, tag3], extract those as tags
+- If a sentence ends with --[tag1, tag2, tag3], extract those as tags,
 - Remove the --[tags] part from the reminder text
 - Store tags as a comma-separated string like "tag1,tag2,tag3"
 - Example: "Call John about the project --[work, urgent]" should extract tags "work,urgent" and text "Call John about the project"
 - If no tags are specified, use null
-- Feel free to update the tags of an existing reminder if the user provides new tags
+- Note that the user may provide tags in a different format em dash or double dash or single dash, use context to understand what is a tag
+
+CRITICAL DUPLICATE DETECTION RULES:
+- If a reminder already exists with the EXACT SAME text and tags, DO NOT include it in your response at all (no CREATE, no UPDATE)
+- ONLY use UPDATE action if the tags have actually CHANGED (different tags than what currently exists)
+- If the reminder text and tags are identical to an existing reminder, simply omit it from your response - this is not an actionable change
+- Do NOT update a reminder just to "confirm" that tags remain the same - that's a waste of database operations
 
 For notify_before_hours:
 - Same day tasks: 0 hours (notify immediately when due)
@@ -471,7 +481,7 @@ For notify_before_hours:
 - This week tasks: 24 hours (notify day before)
 - Longer term: 48 hours (notify 2 days before)
 
-Respond ONLY with valid JSON in this exact format:
+Respond ONLY with valid JSON in this exact format, just straight JSON, no template literals or anything else:
 {{
   "reminders": [
     {{
