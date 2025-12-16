@@ -64,6 +64,7 @@ struct ReminderRow {
     created_from_note_id: i64,
     tags: Option<String>,
     created_at: Option<String>,
+    due_date: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,12 +83,11 @@ struct AiLogRow {
 // We use this to parse the AI's JSON response
 #[derive(Debug, Deserialize)]
 struct AiExtractedReminder {
-    text: String,                    // The reminder text
+    text: String,                    // The reminder text (without due date info)
     action: String,
     update_id: Option<i64>,
     tags: Option<String>,            // Comma-separated tags
-    // due_date: Option<String>,        // "2025-12-20" or null
-    // notify_before_hours: Option<i64>, // How many hours before due date to notify
+    due_date: Option<String>,        // "2025-12-20" or null
 }
 
 #[derive(Debug, Deserialize)]
@@ -177,6 +177,11 @@ fn init_db(db: State<Db>) -> Result<(), String> {
     // This will fail silently if the column already exists
     // Nullable for backwards compatibility with existing reminders
     let _ = conn.execute("ALTER TABLE reminders ADD COLUMN created_at TEXT", ());
+
+    // Add due_date column to existing reminders table
+    // Stores the due date as a date string (YYYY-MM-DD format)
+    // Nullable for reminders without specific due dates
+    let _ = conn.execute("ALTER TABLE reminders ADD COLUMN due_date TEXT", ());
     // The ? operator is shorthand for:
     // if error, return Err(error) immediately
     // if ok, unwrap and continue
@@ -450,9 +455,12 @@ async fn test_claude_api(prompt: String) -> Result<String, String> {
     Ok(content_string)
 }
 
-// This is the AI prompt we'll send to analyze notesnotes
+// This is the AI prompt we'll send to analyze notes
 fn build_analysis_prompt(note_text: &str, current_date: &str, reminders: &Vec<ReminderRow>) -> String {
-    let reminders_text = reminders.iter().map(|reminder| format!("{}: {} (existing tags: {})", reminder.id, reminder.text, reminder.tags.as_deref().unwrap_or(""))).collect::<Vec<String>>().join("\n");
+    let reminders_text = reminders.iter().map(|reminder| {
+        let due_info = reminder.due_date.as_deref().map(|d| format!(", due: {}", d)).unwrap_or_default();
+        format!("{}: {} (tags: {}{})", reminder.id, reminder.text, reminder.tags.as_deref().unwrap_or("none"), due_info)
+    }).collect::<Vec<String>>().join("\n");
     let reminders_prompt = if reminders_text.is_empty() {
         "".to_string()
     } else {
@@ -462,12 +470,11 @@ fn build_analysis_prompt(note_text: &str, current_date: &str, reminders: &Vec<Re
     format!(r#"You are analyzing a note to extract actionable reminders. Today's date is {}.
 
 Analyze this note and extract any tasks, reminders, or action items. For each one, determine:
-1. The reminder text (what needs to be done)
-2. The due date (if mentioned or implied)
-3. How many hours before the due date to notify the user
-4. Tags (if the user ends a sentence with --[comma separated list])
+1. The reminder text (what needs to be done) - DO NOT include the due date in the text
+2. The due date as a separate field (if mentioned or implied) in YYYY-MM-DD format
+3. Tags (if the user ends a sentence with --[comma separated list])
 
-Common patterns to recognize:
+Common patterns to recognize for due_date:
 - "before eow" / "by end of week" = Friday of current week
 - "before eom" / "by end of month" = last day of month
 - "tomorrow" = next day
@@ -484,26 +491,25 @@ For tags:
 - If no tags are specified, use null
 - Note that the user may provide tags in a different format em dash or double dash or single dash, use context to understand what is a tag
 
-CRITICAL DUPLICATE DETECTION RULES:
-- If a reminder already exists with the EXACT SAME text and tags, DO NOT include it in your response at all (no CREATE, no UPDATE)
-- ONLY use UPDATE action if the tags have actually CHANGED (different tags than what currently exists)
-- If the reminder text and tags are identical to an existing reminder, simply omit it from your response - this is not an actionable change
-- Do NOT update a reminder just to "confirm" that tags remain the same - that's a waste of database operations
+CRITICAL: The reminder text should be CLEAN - do NOT include due date information in the text field.
+- BAD: "Message Jon about the project (due date: 2025-12-20)"
+- GOOD: "Message Jon about the project" with due_date: "2025-12-20" as a separate field
 
-For notify_before_hours:
-- Same day tasks: 0 hours (notify immediately when due)
-- Tomorrow tasks: 12 hours (notify evening before)
-- This week tasks: 24 hours (notify day before)
-- Longer term: 48 hours (notify 2 days before)
+CRITICAL DUPLICATE DETECTION RULES:
+- If a reminder already exists with the EXACT SAME text, tags, and due_date, DO NOT include it in your response at all (no CREATE, no UPDATE)
+- ONLY use UPDATE action if the tags or due_date have actually CHANGED (different from what currently exists)
+- If the reminder text, tags, and due_date are identical to an existing reminder, simply omit it from your response
+- Do NOT update a reminder just to "confirm" values remain the same - that's a waste of database operations
 
 Respond ONLY with valid JSON in this exact format, just straight JSON, no template literals or anything else:
 {{
   "reminders": [
     {{
-      "text": "Message Jon about the project (due date: 2025-12-20) (notify before: 24 hours)",
+      "text": "Message Jon about the project",
       "action": "CREATE" | "UPDATE",
       "update_id": 1,
-      "tags": "work,urgent"
+      "tags": "work,urgent",
+      "due_date": "2025-12-20"
     }}
   ],
   "reasoning": "Explain your decision here - why you extracted these reminders, or why you found no actionable items in the note."
@@ -521,8 +527,8 @@ Note to analyze:
 
 fn get_all_reminders_impl(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
     let conn = db.0.lock().unwrap();
-    // Order by created_at, with NULLs (old reminders) at the end
-    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at FROM reminders ORDER BY created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
+    // Order by due_date first (NULLs at end), then by created_at
+    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at, due_date FROM reminders ORDER BY due_date IS NULL, due_date, created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
     let reminders = stmt.query_map([], |row| {
         Ok(ReminderRow {
             id: row.get(0)?,
@@ -531,6 +537,7 @@ fn get_all_reminders_impl(db: &State<'_, Db>) -> Result<Vec<ReminderRow>, String
             resolved: row.get(3)?,
             tags: row.get(4)?,
             created_at: row.get(5)?,
+            due_date: row.get(6)?,
         })
     })
     .map_err(|e| e.to_string())?
@@ -548,8 +555,8 @@ fn get_all_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
 #[tauri::command]
 fn get_unresolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
     let conn = db.0.lock().unwrap();
-    // Order by created_at, with NULLs (old reminders) at the end
-    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at FROM reminders WHERE resolved = 0 ORDER BY created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
+    // Order by due_date first (NULLs at end), then by created_at
+    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at, due_date FROM reminders WHERE resolved = 0 ORDER BY due_date IS NULL, due_date, created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
     let reminders = stmt.query_map([], |row| {
         Ok(ReminderRow {
             id: row.get(0)?,
@@ -558,6 +565,7 @@ fn get_unresolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, Strin
             resolved: row.get(3)?,
             tags: row.get(4)?,
             created_at: row.get(5)?,
+            due_date: row.get(6)?,
         })
     })
     .map_err(|e| e.to_string())?
@@ -570,8 +578,8 @@ fn get_unresolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, Strin
 #[tauri::command]
 fn get_resolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String> {
     let conn = db.0.lock().unwrap();
-    // Order by created_at, with NULLs (old reminders) at the end
-    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at FROM reminders WHERE resolved = 1 ORDER BY created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
+    // Order by due_date first (NULLs at end), then by created_at
+    let mut stmt = conn.prepare("SELECT id, created_from_note_id, text, resolved, tags, created_at, due_date FROM reminders WHERE resolved = 1 ORDER BY due_date IS NULL, due_date, created_at IS NULL, created_at, id").map_err(|e| e.to_string())?;
     let reminders = stmt.query_map([], |row| {
         Ok(ReminderRow {
             id: row.get(0)?,
@@ -580,6 +588,7 @@ fn get_resolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String>
             resolved: row.get(3)?,
             tags: row.get(4)?,
             created_at: row.get(5)?,
+            due_date: row.get(6)?,
         })
     })
     .map_err(|e| e.to_string())?
@@ -633,14 +642,14 @@ async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>
                     for extracted in &analysis.reminders {
                         if extracted.action == "CREATE" {
                             conn.execute(
-                                "INSERT INTO reminders (created_from_note_id, text, tags, created_at) VALUES (?1, ?2, ?3, datetime('now'))",
-                                (note_id, &extracted.text, &extracted.tags),
+                                "INSERT INTO reminders (created_from_note_id, text, tags, due_date, created_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+                                (note_id, &extracted.text, &extracted.tags, &extracted.due_date),
                             )
                             .map_err(|e| e.to_string())?;
                         } else if extracted.action == "UPDATE" {
                             conn.execute(
-                                "UPDATE reminders SET text = ?1, tags = ?2 WHERE id = ?3",
-                                (&extracted.text, &extracted.tags, &extracted.update_id)
+                                "UPDATE reminders SET text = ?1, tags = ?2, due_date = ?3 WHERE id = ?4",
+                                (&extracted.text, &extracted.tags, &extracted.due_date, &extracted.update_id)
                             ).map_err(|e| e.to_string())?;
 
                         }

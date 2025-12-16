@@ -12,6 +12,41 @@ interface TodayViewProps {
   onDeleteReminder: (reminderId: string) => void;
 }
 
+// Helper to get today's date in YYYY-MM-DD format
+function getTodayDate(): string {
+  const now = new Date();
+  return now.toISOString().split('T')[0];
+}
+
+// Helper to check if a date is today
+function isToday(dateStr: string | undefined): boolean {
+  if (!dateStr) return false;
+  return dateStr === getTodayDate();
+}
+
+// Helper to check if a date is overdue (before today)
+function isOverdue(dateStr: string | undefined): boolean {
+  if (!dateStr) return false;
+  return dateStr < getTodayDate();
+}
+
+// Helper to format due date for display
+function formatDueDate(dateStr: string | undefined): string {
+  if (!dateStr) return '';
+  const today = getTodayDate();
+  if (dateStr === today) return 'today';
+  if (dateStr < today) {
+    const daysAgo = Math.floor((new Date(today).getTime() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+    return daysAgo === 1 ? 'yesterday' : `${daysAgo} days ago`;
+  }
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (dateStr === tomorrow.toISOString().split('T')[0]) return 'tomorrow';
+  // Format as "Dec 20"
+  const date = new Date(dateStr + 'T00:00:00');
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export function TodayView({
   currentDate,
   notes,
@@ -32,26 +67,41 @@ export function TodayView({
       {unresolvedReminders.length > 0 && (
         <div className="unresolved-reminders">
           <div className="unresolved-reminders-title">Reminders</div>
-          {unresolvedReminders.map((reminder, index) => (
-            <div
-              key={reminder.id}
-              className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''}`}
-            >
-              <span className="unresolved-reminder-text">{reminder.text}</span>
-              <button
-                className="mini-action-btn"
-                onClick={() => onResolveReminder(reminder.id)}
+          {unresolvedReminders.map((reminder, index) => {
+            const dueToday = isToday(reminder.due_date);
+            const overdue = isOverdue(reminder.due_date);
+
+            return (
+              <div
+                key={reminder.id}
+                className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''} ${dueToday ? 'due-today' : ''} ${overdue ? 'overdue' : ''}`}
               >
-                resolve
-              </button>
-              <button
-                className="mini-action-btn delete"
-                onClick={() => onDeleteReminder(reminder.id)}
-              >
-                delete
-              </button>
-            </div>
-          ))}
+                {(dueToday || overdue) && (
+                  <span className={`due-indicator ${overdue ? 'overdue' : 'today'}`}>
+                    {overdue ? '!' : '*'}
+                  </span>
+                )}
+                <span className="unresolved-reminder-text">{reminder.text}</span>
+                {reminder.due_date && (
+                  <span className={`due-date-badge ${dueToday ? 'today' : ''} ${overdue ? 'overdue' : ''}`}>
+                    {formatDueDate(reminder.due_date)}
+                  </span>
+                )}
+                <button
+                  className="mini-action-btn"
+                  onClick={() => onResolveReminder(reminder.id)}
+                >
+                  resolve
+                </button>
+                <button
+                  className="mini-action-btn delete"
+                  onClick={() => onDeleteReminder(reminder.id)}
+                >
+                  delete
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 

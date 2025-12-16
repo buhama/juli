@@ -649,3 +649,100 @@ body {
   background: var(--border-color);
   border-radius: 4px;
 }
+
+/* Due Date Indicators */
+.due-indicator {
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+.due-indicator.today {
+  color: #ffc107;
+}
+
+.due-indicator.overdue {
+  color: #ff5252;
+}
+
+.due-date-badge {
+  font-size: 10px;
+  font-weight: 400;
+  color: #888;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.due-date-badge.today {
+  color: #ffc107;
+  background-color: rgba(255, 193, 7, 0.1);
+  border-color: rgba(255, 193, 7, 0.3);
+}
+
+.due-date-badge.overdue {
+  color: #ff5252;
+  background-color: rgba(255, 82, 82, 0.1);
+  border-color: rgba(255, 82, 82, 0.3);
+}
+
+/* Today View - Due Indicators */
+.unresolved-reminder-item.due-today {
+  border-left: 2px solid #ffc107;
+  padding-left: 6px;
+  margin-left: -8px;
+}
+
+.unresolved-reminder-item.overdue {
+  border-left: 2px solid #ff5252;
+  padding-left: 6px;
+  margin-left: -8px;
+}
+
+.unresolved-reminder-item.selected.due-today,
+.unresolved-reminder-item.selected.overdue {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Reminders View - Due Date Styling */
+.reminder-card.due-today {
+  border-left: 3px solid #ffc107;
+}
+
+.reminder-card.overdue {
+  border-left: 3px solid #ff5252;
+}
+
+.reminder-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.reminder-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.reminder-due-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.reminder-due-date.today {
+  color: #ffc107;
+  font-weight: 500;
+}
+
+.reminder-due-date.overdue {
+  color: #ff5252;
+  font-weight: 500;
+}
