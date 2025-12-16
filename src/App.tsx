@@ -64,6 +64,41 @@ function App() {
       });
   }, []);
 
+  // Keyboard shortcuts for navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if Cmd (Mac) or Ctrl (Windows/Linux) is pressed
+      const modifierKey = e.metaKey || e.ctrlKey;
+
+      if (!modifierKey) return;
+
+      switch (e.key.toLowerCase()) {
+        case 't':
+          e.preventDefault();
+          switchView('today');
+          break;
+        case 'h':
+          e.preventDefault();
+          switchView('history');
+          break;
+        case 'r':
+          e.preventDefault();
+          switchView('reminders');
+          break;
+        case 'l':
+          e.preventDefault();
+          switchView('ai-logs');
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [currentView, notes, currentDate]);
+
   useEffect(() => {
     const getDatesAndNotes = async () => {
       try {
