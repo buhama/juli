@@ -167,6 +167,10 @@ fn init_db(db: State<Db>) -> Result<(), String> {
     // This is necessary because our function returns Result<(), String>
     // In TypeScript: .catch(e => throw e.toString())
     .map_err(|e| e.to_string())?;
+
+    // Add resolved_at column to existing reminders table (for analytics)
+    // This will fail silently if the column already exists
+    let _ = conn.execute("ALTER TABLE reminders ADD COLUMN resolved_at TEXT", ());
     // The ? operator is shorthand for:
     // if error, return Err(error) immediately
     // if ok, unwrap and continue
@@ -644,16 +648,22 @@ async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>
 #[tauri::command]
 fn resolve_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
     let conn = db.0.lock().unwrap();
-    conn.execute("UPDATE reminders SET resolved = 1 WHERE id = ?1", (reminder_id,))
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE reminders SET resolved = 1, resolved_at = datetime('now') WHERE id = ?1",
+        (reminder_id,),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 fn unresolve_reminder(db: State<'_, Db>, reminder_id: i64) -> Result<(), String> {
     let conn = db.0.lock().unwrap();
-    conn.execute("UPDATE reminders SET resolved = 0 WHERE id = ?1", (reminder_id,))
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE reminders SET resolved = 0, resolved_at = NULL WHERE id = ?1",
+        (reminder_id,),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
