@@ -242,6 +242,20 @@ body {
   flex-direction: column;
 }
 
+.reminders-header {
+  padding: 24px 40px 16px 40px;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.reminders-header .search-input {
+  flex: 1;
+}
+
 .search-container {
   padding: 24px 40px 16px 40px;
   max-width: 800px;
@@ -361,6 +375,47 @@ body {
   color: var(--text-secondary);
   padding: 40px;
   font-size: 14px;
+}
+
+/* Toggle Resolved Button */
+.toggle-resolved-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.toggle-resolved-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.toggle-resolved-btn.active {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* Resolved Section */
+.resolved-section {
+  margin-top: 16px;
+}
+
+.resolved-divider {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: lowercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
 }
 
 /* AI Logs View */

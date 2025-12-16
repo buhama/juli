@@ -44,6 +44,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [pastDays, setPastDays] = useState<DayNote[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [resolvedReminders, setResolvedReminders] = useState<Reminder[]>([]);
+  const [showResolvedReminders, setShowResolvedReminders] = useState(false);
   const [aiLogs, setAiLogs] = useState<AiLog[]>([]);
   const [selectedReminderIndex, setSelectedReminderIndex] = useState<number | null>(null);
   const [status, setStatus] = useState<StatusState>({ type: null });
@@ -73,8 +75,8 @@ function App() {
       const result = await invoke<number>('add_note', { text, forDate });
       console.log('Note saved:', result);
 
-      // After save completes (AI has already run), always refetch reminders
-      const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
+      // After save completes (AI has already run), always refetch unresolved reminders
+      const updatedReminders = await invoke<Reminder[]>('get_unresolved_reminders');
       setReminders(updatedReminders);
 
       const newRemindersCount = updatedReminders.length - currentRemindersCount;
@@ -245,8 +247,8 @@ function App() {
         const note = await invoke<DayNote>('get_notes_for_date', { forDate: formattedDate });
         setNotes(note);
 
-        // Load reminders on initial load
-        const remindersData = await invoke<Reminder[]>('get_all_reminders');
+        // Load only unresolved reminders on initial load
+        const remindersData = await invoke<Reminder[]>('get_unresolved_reminders');
         setReminders(remindersData);
       } catch (error) {
         console.error('Failed to get dates and notes:', error);
@@ -287,9 +289,26 @@ function App() {
     }
   };
 
-  const filteredReminders = reminders.filter(reminder =>
-    reminder.text.toLowerCase().includes(searchQuery.toLowerCase()) 
+  const filteredUnresolvedReminders = reminders.filter(reminder =>
+    reminder.text.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const filteredResolvedReminders = resolvedReminders.filter(reminder =>
+    reminder.text.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const toggleShowResolved = async () => {
+    if (!showResolvedReminders) {
+      // Fetch resolved reminders when showing them
+      try {
+        const resolved = await invoke<Reminder[]>('get_resolved_reminders');
+        setResolvedReminders(resolved);
+      } catch (error) {
+        console.error('Failed to get resolved reminders:', error);
+      }
+    }
+    setShowResolvedReminders(!showResolvedReminders);
+  };
 
   const switchView = (view: View) => {
     // Save current notes before switching views (non-blocking)
@@ -322,14 +341,18 @@ function App() {
     }
 
     if (view === 'reminders') {
-      invoke<Reminder[]>('get_all_reminders')
+      // Only fetch unresolved reminders initially
+      invoke<Reminder[]>('get_unresolved_reminders')
         .then((result) => {
-          console.log('Reminders:', result);
+          console.log('Unresolved reminders:', result);
           setReminders(result);
         })
         .catch((error) => {
-          console.error('Failed to get all reminders:', error);
+          console.error('Failed to get unresolved reminders:', error);
         });
+      // Reset resolved view when switching to reminders
+      setShowResolvedReminders(false);
+      setResolvedReminders([]);
     }
 
     if (view === 'ai-logs') {
@@ -356,16 +379,21 @@ function App() {
   const handleResolveReminder = async (reminderId: string) => {
     try {
       await invoke('resolve_reminder', { reminderId: parseInt(reminderId) });
-      // Refresh reminders list
-      const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
+      // Refresh unresolved reminders list
+      const updatedReminders = await invoke<Reminder[]>('get_unresolved_reminders');
       setReminders(updatedReminders);
+
+      // If viewing resolved reminders, also refresh that list
+      if (showResolvedReminders) {
+        const updatedResolved = await invoke<Reminder[]>('get_resolved_reminders');
+        setResolvedReminders(updatedResolved);
+      }
 
       // If a reminder was selected, keep selection on next unresolved reminder
       if (selectedReminderIndex !== null) {
-        const newUnresolvedReminders = updatedReminders.filter(r => !r.resolved);
-        if (newUnresolvedReminders.length > 0) {
+        if (updatedReminders.length > 0) {
           // Keep same index, or select last if we were at the end
-          const newIndex = Math.min(selectedReminderIndex, newUnresolvedReminders.length - 1);
+          const newIndex = Math.min(selectedReminderIndex, updatedReminders.length - 1);
           setSelectedReminderIndex(newIndex);
         } else {
           // No more unresolved reminders, deselect and focus textarea
@@ -383,20 +411,31 @@ function App() {
   const handleUnresolveReminder = async (reminderId: string) => {
     try {
       await invoke('unresolve_reminder', { reminderId: parseInt(reminderId) });
-      // Refresh reminders list
-      const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
+      // Refresh unresolved reminders list
+      const updatedReminders = await invoke<Reminder[]>('get_unresolved_reminders');
       setReminders(updatedReminders);
+
+      // If viewing resolved reminders, also refresh that list
+      if (showResolvedReminders) {
+        const updatedResolved = await invoke<Reminder[]>('get_resolved_reminders');
+        setResolvedReminders(updatedResolved);
+      }
     } catch (error) {
       console.error('Failed to unresolve reminder:', error);
     }
   };
 
-  const handleDeleteReminder = async (reminderId: string) => {
+  const handleDeleteReminder = async (reminderId: string, isResolved: boolean = false) => {
     try {
       await invoke('delete_reminder', { reminderId: parseInt(reminderId) });
-      // Refresh reminders list
-      const updatedReminders = await invoke<Reminder[]>('get_all_reminders');
-      setReminders(updatedReminders);
+      // Refresh the appropriate list based on which reminder was deleted
+      if (isResolved && showResolvedReminders) {
+        const updatedResolved = await invoke<Reminder[]>('get_resolved_reminders');
+        setResolvedReminders(updatedResolved);
+      } else {
+        const updatedReminders = await invoke<Reminder[]>('get_unresolved_reminders');
+        setReminders(updatedReminders);
+      }
     } catch (error) {
       console.error('Failed to delete reminder:', error);
     }
@@ -435,9 +474,15 @@ function App() {
       const note = await invoke<DayNote>('get_notes_for_date', { forDate: formattedDate });
       setNotes(note);
 
-      // Reload reminders (always needed for today view)
-      const remindersData = await invoke<Reminder[]>('get_all_reminders');
+      // Reload unresolved reminders (always needed for today view)
+      const remindersData = await invoke<Reminder[]>('get_unresolved_reminders');
       setReminders(remindersData);
+
+      // If viewing resolved reminders, refresh that too
+      if (showResolvedReminders) {
+        const resolvedData = await invoke<Reminder[]>('get_resolved_reminders');
+        setResolvedReminders(resolvedData);
+      }
 
       // Reload current view's data
       if (currentView === 'history') {
@@ -604,7 +649,7 @@ function App() {
 
         {currentView === 'reminders' && (
           <div className="reminders-view">
-            <div className="search-container">
+            <div className="reminders-header">
               <input
                 type="text"
                 className="search-input"
@@ -612,11 +657,17 @@ function App() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
+              <button
+                className={`toggle-resolved-btn ${showResolvedReminders ? 'active' : ''}`}
+                onClick={toggleShowResolved}
+              >
+                {showResolvedReminders ? 'hide resolved' : 'show resolved'}
+              </button>
             </div>
             <div className="reminders-list">
-              {filteredReminders.length > 0 ? (
-                filteredReminders.map((reminder) => (
-                  <div key={reminder.id} className={`reminder-card ${reminder.resolved ? 'resolved' : ''}`}>
+              {filteredUnresolvedReminders.length > 0 ? (
+                filteredUnresolvedReminders.map((reminder) => (
+                  <div key={reminder.id} className="reminder-card">
                     <div className="reminder-header">
                       <div className="reminder-content">
                         <div className="reminder-text">{reminder.text}</div>
@@ -629,21 +680,12 @@ function App() {
                         )}
                       </div>
                       <div className="reminder-actions">
-                        {!reminder.resolved ? (
-                          <button
-                            className="action-btn"
-                            onClick={() => handleResolveReminder(reminder.id)}
-                          >
-                            resolve
-                          </button>
-                        ) : (
-                          <button
-                            className="action-btn"
-                            onClick={() => handleUnresolveReminder(reminder.id)}
-                          >
-                            unresolve
-                          </button>
-                        )}
+                        <button
+                          className="action-btn"
+                          onClick={() => handleResolveReminder(reminder.id)}
+                        >
+                          resolve
+                        </button>
                         <button
                           className="action-btn delete"
                           onClick={() => handleDeleteReminder(reminder.id)}
@@ -655,7 +697,50 @@ function App() {
                   </div>
                 ))
               ) : (
-                <div className="no-results">No reminders found</div>
+                <div className="no-results">No unresolved reminders</div>
+              )}
+
+              {showResolvedReminders && (
+                <>
+                  {filteredResolvedReminders.length > 0 && (
+                    <div className="resolved-section">
+                      <div className="resolved-divider">resolved</div>
+                      {filteredResolvedReminders.map((reminder) => (
+                        <div key={reminder.id} className="reminder-card resolved">
+                          <div className="reminder-header">
+                            <div className="reminder-content">
+                              <div className="reminder-text">{reminder.text}</div>
+                              {reminder.tags && (
+                                <div className="reminder-tags">
+                                  {reminder.tags.split(',').map((tag, idx) => (
+                                    <span key={idx} className="reminder-tag">{tag.trim()}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="reminder-actions">
+                              <button
+                                className="action-btn"
+                                onClick={() => handleUnresolveReminder(reminder.id)}
+                              >
+                                unresolve
+                              </button>
+                              <button
+                                className="action-btn delete"
+                                onClick={() => handleDeleteReminder(reminder.id, true)}
+                              >
+                                delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {filteredResolvedReminders.length === 0 && (
+                    <div className="no-results">No resolved reminders</div>
+                  )}
+                </>
               )}
             </div>
           </div>
