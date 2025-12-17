@@ -83,13 +83,33 @@ export function useKeyboardNavigation({
         case 'j':
           e.preventDefault();
           if (selectedReminderIndex < unresolvedReminders.length - 1) {
-            setSelectedReminderIndex(selectedReminderIndex + 1);
+            const newIndex = selectedReminderIndex + 1;
+            setSelectedReminderIndex(newIndex);
+            // Scroll the selected reminder into view after state update
+            requestAnimationFrame(() => {
+              const reminderItems = document.querySelectorAll('.unresolved-reminder-item');
+              if (reminderItems[newIndex]) {
+                reminderItems[newIndex].scrollIntoView({
+                  block: 'nearest',
+                });
+              }
+            });
           }
           break;
         case 'k':
           e.preventDefault();
           if (selectedReminderIndex > 0) {
-            setSelectedReminderIndex(selectedReminderIndex - 1);
+            const newIndex = selectedReminderIndex - 1;
+            setSelectedReminderIndex(newIndex);
+            // Scroll the selected reminder into view after state update
+            requestAnimationFrame(() => {
+              const reminderItems = document.querySelectorAll('.unresolved-reminder-item');
+              if (reminderItems[newIndex]) {
+                reminderItems[newIndex].scrollIntoView({
+                  block: 'nearest',
+                });
+              }
+            });
           }
           break;
         case 'r':
