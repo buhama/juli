@@ -74,13 +74,8 @@ export function TodayView({
             return (
               <div
                 key={reminder.id}
-                className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''} ${dueToday ? 'due-today' : ''} ${overdue ? 'overdue' : ''}`}
+                className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''}`}
               >
-                {(dueToday || overdue) && (
-                  <span className={`due-indicator ${overdue ? 'overdue' : 'today'}`}>
-                    {overdue ? '!' : '*'}
-                  </span>
-                )}
                 <span className="unresolved-reminder-text">{reminder.text}</span>
                 {reminder.due_date && (
                   <span className={`due-date-badge ${dueToday ? 'today' : ''} ${overdue ? 'overdue' : ''}`}>

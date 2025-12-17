@@ -1,7 +1,7 @@
-use std::{env, sync::Mutex};
+use std::{env, sync::Mutex, fs};
 
 use rusqlite::Connection;
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -31,6 +31,17 @@ struct Db(Mutex<Connection>);
 // before the first analysis has created reminders
 // Uses TokioMutex because it needs to be held across async await points
 struct AiLock(TokioMutex<()>);
+
+// ============================================================================
+// CONFIG FILE STRUCTURE
+// ============================================================================
+
+// Configuration loaded from config.json in the app's config directory
+// This is used for production builds where .env files aren't loaded
+#[derive(Deserialize)]
+struct AppConfig {
+    claude_api_key: String,
+}
 
 // ============================================================================
 // NOTE DATA STRUCTURE
@@ -200,7 +211,7 @@ fn init_db(db: State<Db>) -> Result<(), String> {
 // This command inserts a new note or updates an existing one for a given date
 // In TypeScript: async function addNote(text: string, for_date: string): Promise<number>
 #[tauri::command]
-async fn add_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>, text: String, for_date: String) -> Result<i64, String> {
+async fn add_note(app: AppHandle, db: State<'_, Db>, ai_lock: State<'_, AiLock>, text: String, for_date: String) -> Result<i64, String> {
     // Parameters:
     // - db: State<Db> - our shared database connection (injected by Tauri)
     // - ai_lock: State<AiLock> - lock to prevent concurrent AI analyses
@@ -253,7 +264,7 @@ async fn add_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>, text: String, f
         note_id
     };
 
-    create_reminder_from_note(db, ai_lock, note_id, note_text).await?;
+    create_reminder_from_note(app, db, ai_lock, note_id, note_text).await?;
 
     Ok(note_id)
 }
@@ -403,15 +414,57 @@ fn print_all_tables(db: State<Db>) -> Result<Vec<NoteRow>, String> {
     Ok(notes)
 }
 
+// ============================================================================
+// API KEY CONFIGURATION
+// ============================================================================
+
+// Get the API key from either .env (dev) or config.json (production)
+// This ensures the app works both during development and in packaged builds
 #[tauri::command]
-fn get_api_key() -> Result<String, String> {
-    env::var("CLAUDE_API_KEY")
-        .map_err(|_| "CLAUDE_API_KEY not set. Create a .env file.".to_string())
+fn get_api_key(app: AppHandle) -> Result<String, String> {
+    // Try .env first (for development)
+    if let Ok(key) = env::var("CLAUDE_API_KEY") {
+        println!("✓ Using API key from .env file");
+        return Ok(key);
+    }
+
+    // Fallback to config.json (for production/packaged builds)
+    load_api_key_from_config(app)
+}
+
+// Load the API key from config.json in the app's config directory
+fn load_api_key_from_config(app: AppHandle) -> Result<String, String> {
+    // Get the app config directory path
+    // macOS: ~/Library/Application Support/<app-name>/config.json
+    // Windows: C:\Users\<user>\AppData\Roaming\<app-name>\config.json
+    // Linux: ~/.config/<app-name>/config.json
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Failed to resolve app config dir: {}", e))?;
+
+    let config_path = config_dir.join("config.json");
+
+    // Read the config file
+    let contents = fs::read_to_string(&config_path)
+        .map_err(|_| {
+            format!(
+                "config.json not found. Create it at: {}\n\nExample content:\n{{\n  \"claude_api_key\": \"sk-...\"\n}}",
+                config_path.display()
+            )
+        })?;
+
+    // Parse the JSON
+    let config: AppConfig = serde_json::from_str(&contents)
+        .map_err(|e| format!("Invalid config.json: {}", e))?;
+
+    println!("✓ Using API key from config.json at: {}", config_path.display());
+    Ok(config.claude_api_key)
 }
 
 #[tauri::command]
-async fn test_claude_api(prompt: String) -> Result<String, String> {
-    let api_key = get_api_key()?;
+async fn test_claude_api(app: AppHandle, prompt: String) -> Result<String, String> {
+    let api_key = get_api_key(app)?;
 
     let client = reqwest::Client::new();
 
@@ -599,7 +652,7 @@ fn get_resolved_reminders(db: State<'_, Db>) -> Result<Vec<ReminderRow>, String>
 }
 
 #[tauri::command]
-async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>, note_id: i64, note_text: String) -> Result<(), String> {
+async fn create_reminder_from_note(app: AppHandle, db: State<'_, Db>, ai_lock: State<'_, AiLock>, note_id: i64, note_text: String) -> Result<(), String> {
     // Acquire the AI lock to ensure only one analysis runs at a time
     // This prevents race conditions from rapid successive saves
     let _lock = ai_lock.0.lock().await;
@@ -628,7 +681,7 @@ async fn create_reminder_from_note(db: State<'_, Db>, ai_lock: State<'_, AiLock>
     let prompt = build_analysis_prompt(note_text.as_str(), &current_date, &reminders);
 
     // Try to call the AI API and log the result
-    let api_result = test_claude_api(prompt.clone()).await;
+    let api_result = test_claude_api(app, prompt.clone()).await;
 
     match api_result {
         Ok(response) => {

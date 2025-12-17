@@ -103,6 +103,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 20%;
+  overflow-y: auto;
 }
 
 .unresolved-reminders-title {
