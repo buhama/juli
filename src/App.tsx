@@ -169,6 +169,9 @@ function App() {
   }, [currentView, notes, selectedReminderIndex]);
 
   const handleNotesChangeWrapper = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (selectedReminderIndex !== null) {
+      setSelectedReminderIndex(null);
+    }
     handleNotesChange(e.target.value);
   };
 
@@ -177,6 +180,14 @@ function App() {
       handleSaveImmediate();
     }
   };
+
+  const handleSelectReminder = useCallback((index: number) => {
+    setSelectedReminderIndex(index);
+  }, []);
+
+  const handleDeselectReminders = useCallback(() => {
+    setSelectedReminderIndex(null);
+  }, []);
 
   const handlePrintTable = async () => {
     try {
@@ -221,6 +232,8 @@ function App() {
             onKeyDown={handleKeyDown}
             onResolveReminder={handleResolveReminder}
             onDeleteReminder={deleteReminder}
+            onSelectReminder={handleSelectReminder}
+            onDeselectReminders={handleDeselectReminders}
           />
         )}
 

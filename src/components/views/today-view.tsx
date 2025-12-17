@@ -10,6 +10,8 @@ interface TodayViewProps {
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onResolveReminder: (reminderId: string) => void;
   onDeleteReminder: (reminderId: string) => void;
+  onSelectReminder: (index: number) => void;
+  onDeselectReminders: () => void;
 }
 
 // Helper to get today's date in YYYY-MM-DD format
@@ -57,6 +59,8 @@ export function TodayView({
   onKeyDown,
   onResolveReminder,
   onDeleteReminder,
+  onSelectReminder,
+  onDeselectReminders,
 }: TodayViewProps) {
   const unresolvedReminders = reminders.filter(r => !r.resolved);
 
@@ -75,6 +79,12 @@ export function TodayView({
               <div
                 key={reminder.id}
                 className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''}`}
+                onClick={() => {
+                  onSelectReminder(index);
+                  if (textareaRef.current) {
+                    textareaRef.current.blur();
+                  }
+                }}
               >
                 <span className="unresolved-reminder-text">{reminder.text}</span>
                 {reminder.due_date && (
@@ -84,13 +94,19 @@ export function TodayView({
                 )}
                 <button
                   className="mini-action-btn"
-                  onClick={() => onResolveReminder(reminder.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onResolveReminder(reminder.id);
+                  }}
                 >
                   resolve
                 </button>
                 <button
                   className="mini-action-btn delete"
-                  onClick={() => onDeleteReminder(reminder.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteReminder(reminder.id);
+                  }}
                 >
                   delete
                 </button>
@@ -106,6 +122,12 @@ export function TodayView({
         value={notes?.text || ''}
         onChange={onNotesChange}
         onKeyDown={onKeyDown}
+        onClick={() => {
+          onDeselectReminders();
+        }}
+        onFocus={() => {
+          onDeselectReminders();
+        }}
         placeholder="Start typing..."
       />
     </div>
