@@ -517,7 +517,7 @@ fn build_analysis_prompt(note_text: &str, current_date: &str, reminders: &Vec<Re
     let reminders_prompt = if reminders_text.is_empty() {
         "".to_string()
     } else {
-        format!("These are the existing reminders, dont create any duplicates: \n{}", reminders_text)
+        format!("These are the existing reminders. Before creating a new reminder, check if it matches an existing one: \n{}", reminders_text)
     };
 
     format!(r#"You are analyzing a note to extract actionable reminders. Today's date is {}.
@@ -549,10 +549,20 @@ CRITICAL: The reminder text should be CLEAN - do NOT include due date informatio
 - GOOD: "Message Jon about the project" with due_date: "2025-12-20" as a separate field
 
 CRITICAL DUPLICATE DETECTION RULES:
+- FIRST, check if the note is referring to an EXISTING reminder about the same task/subject
+- Match reminders by semantic similarity, not just exact text match. Examples:
+  * "finish simpli rewind" matches "simpli rewind should happen before end of year" → UPDATE the existing reminder
+  * "call John" matches "call John about the project" → UPDATE the existing reminder
+  * "review PR" matches "review the pull request" → UPDATE the existing reminder
+- If a new note provides additional information (like a due date) for an existing task, ALWAYS UPDATE the existing reminder instead of creating a new one
 - If a reminder already exists with the EXACT SAME text, tags, and due_date, DO NOT include it in your response at all (no CREATE, no UPDATE)
-- ONLY use UPDATE action if the tags or due_date have actually CHANGED (different from what currently exists)
+- ONLY use UPDATE action if:
+  * The note is about the same task/subject as an existing reminder (even if wording differs slightly), OR
+  * The tags or due_date have actually CHANGED (different from what currently exists)
+- When updating, use the most complete/clear version of the text from either the existing reminder or the new note
 - If the reminder text, tags, and due_date are identical to an existing reminder, simply omit it from your response
 - Do NOT update a reminder just to "confirm" values remain the same - that's a waste of database operations
+- When in doubt about whether something matches an existing reminder, prefer UPDATE over CREATE
 
 Respond ONLY with valid JSON in this exact format, just straight JSON, no template literals or anything else:
 {{
