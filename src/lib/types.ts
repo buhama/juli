@@ -20,6 +20,8 @@ export interface Reminder {
   text: string;
   resolved: boolean;
   tags?: string;
+  created_at?: string;
+  due_date?: string;
 }
 
 export interface AiLog {
