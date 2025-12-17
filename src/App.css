@@ -96,15 +96,40 @@ body {
   color: white;
 }
 
+.today-view-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.notes-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.reminders-section {
+  width: 350px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--border-color);
+}
+
 /* Unresolved Reminders (Minimalistic) */
 .unresolved-reminders {
-  padding: 0 40px;
-  margin-bottom: 20px;
+  padding: 0 24px 24px 24px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 20%;
   overflow-y: auto;
+  flex: 1;
 }
 
 .unresolved-reminders-title {
@@ -189,6 +214,7 @@ body {
   padding: 0 40px 40px 40px;
   width: 100%;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .notes-area::placeholder {

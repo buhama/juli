@@ -67,69 +67,73 @@ export function TodayView({
   return (
     <div className="today-view">
       <div className="date">{currentDate}</div>
-
-      {unresolvedReminders.length > 0 && (
-        <div className="unresolved-reminders">
-          <div className="unresolved-reminders-title">Reminders</div>
-          {unresolvedReminders.map((reminder, index) => {
-            const dueToday = isToday(reminder.due_date);
-            const overdue = isOverdue(reminder.due_date);
-
-            return (
-              <div
-                key={reminder.id}
-                className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''}`}
-                onClick={() => {
-                  onSelectReminder(index);
-                  if (textareaRef.current) {
-                    textareaRef.current.blur();
-                  }
-                }}
-              >
-                <span className="unresolved-reminder-text">{reminder.text}</span>
-                {reminder.due_date && (
-                  <span className={`due-date-badge ${dueToday ? 'today' : ''} ${overdue ? 'overdue' : ''}`}>
-                    {formatDueDate(reminder.due_date)}
-                  </span>
-                )}
-                <button
-                  className="mini-action-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onResolveReminder(reminder.id);
-                  }}
-                >
-                  resolve
-                </button>
-                <button
-                  className="mini-action-btn delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteReminder(reminder.id);
-                  }}
-                >
-                  delete
-                </button>
-              </div>
-            );
-          })}
+      <div className="today-view-content">
+        <div className="notes-section">
+          <textarea
+            ref={textareaRef}
+            className="notes-area"
+            value={notes?.text || ''}
+            onChange={onNotesChange}
+            onKeyDown={onKeyDown}
+            onClick={() => {
+              onDeselectReminders();
+            }}
+            onFocus={() => {
+              onDeselectReminders();
+            }}
+            placeholder="Start typing..."
+          />
         </div>
-      )}
+        {unresolvedReminders.length > 0 && (
+          <div className="reminders-section">
+            <div className="unresolved-reminders">
+              <div className="unresolved-reminders-title">Reminders</div>
+              {unresolvedReminders.map((reminder, index) => {
+                const dueToday = isToday(reminder.due_date);
+                const overdue = isOverdue(reminder.due_date);
 
-      <textarea
-        ref={textareaRef}
-        className="notes-area"
-        value={notes?.text || ''}
-        onChange={onNotesChange}
-        onKeyDown={onKeyDown}
-        onClick={() => {
-          onDeselectReminders();
-        }}
-        onFocus={() => {
-          onDeselectReminders();
-        }}
-        placeholder="Start typing..."
-      />
+                return (
+                  <div
+                    key={reminder.id}
+                    className={`unresolved-reminder-item ${selectedReminderIndex === index ? 'selected' : ''}`}
+                    onClick={() => {
+                      onSelectReminder(index);
+                      if (textareaRef.current) {
+                        textareaRef.current.blur();
+                      }
+                    }}
+                  >
+                    <span className="unresolved-reminder-text">{reminder.text}</span>
+                    {reminder.due_date && (
+                      <span className={`due-date-badge ${dueToday ? 'today' : ''} ${overdue ? 'overdue' : ''}`}>
+                        {formatDueDate(reminder.due_date)}
+                      </span>
+                    )}
+                    <button
+                      className="mini-action-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onResolveReminder(reminder.id);
+                      }}
+                    >
+                      resolve
+                    </button>
+                    <button
+                      className="mini-action-btn delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteReminder(reminder.id);
+                      }}
+                    >
+                      delete
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
